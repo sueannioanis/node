@@ -82,7 +82,9 @@ $ source node_bash_completion
 
 ### `--conditions=condition`
 <!-- YAML
-added: v14.9.0
+added:
+  - v14.9.0
+  - v12.19.0
 -->
 
 > Stability: 1 - Experimental
@@ -184,31 +186,38 @@ code from strings throw an exception instead. This does not affect the Node.js
 added: v6.0.0
 -->
 
-Enable FIPS-compliant crypto at startup. (Requires Node.js to be built with
-`./configure --openssl-fips`.)
+Enable FIPS-compliant crypto at startup. (Requires Node.js to be built
+against FIPS-compatible OpenSSL.)
 
 ### `--enable-source-maps`
 <!-- YAML
 added: v12.12.0
+changes:
+  - version: v15.11.0
+    pr-url: https://github.com/nodejs/node/pull/37362
+    description: This API is no longer experimental.
 -->
 
-> Stability: 1 - Experimental
+Enable [Source Map v3][Source Map] support for stack traces.
 
-Enable experimental Source Map v3 support for stack traces.
+When using a transpiler, such as TypeScript, strack traces thrown by an
+application reference the transpiled code, not the original source position.
+`--enable-source-maps` enables caching of Source Maps and makes a best
+effort to report stack traces relative to the original source file.
 
-Currently, overriding `Error.prepareStackTrace` is ignored when the
-`--enable-source-maps` flag is set.
+Overriding `Error.prepareStackTrace` prevents `--enable-source-maps` from
+modifiying the stack trace.
 
 ### `--experimental-abortcontroller`
 <!-- YAML
-added: REPLACEME
+added: v15.0.0
 changes:
-  - version: REPLACEME
+  - version: v15.0.0
     pr-url: https://github.com/nodejs/node/pull/33527
     description: --experimental-abortcontroller is no longer required.
 -->
 
-Experimental `AbortController` and `AbortSignal` support is enabled by default.
+`AbortController` and `AbortSignal` support is enabled by default.
 Use of this command-line flag is no longer required.
 
 ### `--experimental-import-meta-resolve`
@@ -232,7 +241,7 @@ Enable experimental JSON support for the ES Module loader.
 added: v9.0.0
 -->
 
-Specify the `module` of a custom [experimental ECMAScript Module loader][].
+Specify the `module` of a custom experimental [ECMAScript Module loader][].
 `module` may be either a path to a file, or an ECMAScript Module name.
 
 ### `--experimental-modules`
@@ -288,7 +297,7 @@ changes:
   - version: v13.6.0
     pr-url: https://github.com/nodejs/node/pull/30980
     description: changed from `--experimental-wasi-unstable-preview0` to
-                 `--experimental-wasi-unstable-preview1`
+                 `--experimental-wasi-unstable-preview1`.
 -->
 
 Enable experimental WebAssembly System Interface (WASI) support.
@@ -298,14 +307,14 @@ Enable experimental WebAssembly System Interface (WASI) support.
 added: v12.3.0
 -->
 
+Enable experimental WebAssembly module support.
+
 ### `--force-context-aware`
 <!-- YAML
 added: v12.12.0
 -->
 
 Disable loading native addons that are not [context-aware][].
-
-Enable experimental WebAssembly module support.
 
 ### `--force-fips`
 <!-- YAML
@@ -330,6 +339,52 @@ reference. Code may break under this flag.
 
 `--require` runs prior to freezing intrinsics in order to allow polyfills to
 be added.
+
+### `--heapsnapshot-near-heap-limit=max_count`
+<!-- YAML
+added: v15.1.0
+-->
+
+> Stability: 1 - Experimental
+
+Writes a V8 heap snapshot to disk when the V8 heap usage is approaching the
+heap limit. `count` should be a non-negative integer (in which case
+Node.js will write no more than `max_count` snapshots to disk).
+
+When generating snapshots, garbage collection may be triggered and bring
+the heap usage down, therefore multiple snapshots may be written to disk
+before the Node.js instance finally runs out of memory. These heap snapshots
+can be compared to determine what objects are being allocated during the
+time consecutive snapshots are taken. It's not guaranteed that Node.js will
+write exactly `max_count` snapshots to disk, but it will try
+its best to generate at least one and up to `max_count` snapshots before the
+Node.js instance runs out of memory when `max_count` is greater than `0`.
+
+Generating V8 snapshots takes time and memory (both memory managed by the
+V8 heap and native memory outside the V8 heap). The bigger the heap is,
+the more resources it needs. Node.js will adjust the V8 heap to accommodate
+the additional V8 heap memory overhead, and try its best to avoid using up
+all the memory available to the process. When the process uses
+more memory than the system deems appropriate, the process may be terminated
+abruptly by the system, depending on the system configuration.
+
+```console
+$ node --max-old-space-size=100 --heapsnapshot-near-heap-limit=3 index.js
+Wrote snapshot to Heap.20200430.100036.49580.0.001.heapsnapshot
+Wrote snapshot to Heap.20200430.100037.49580.0.002.heapsnapshot
+Wrote snapshot to Heap.20200430.100038.49580.0.003.heapsnapshot
+
+<--- Last few GCs --->
+
+[49580:0x110000000]     4826 ms: Mark-sweep 130.6 (147.8) -> 130.5 (147.8) MB, 27.4 / 0.0 ms  (average mu = 0.126, current mu = 0.034) allocation failure scavenge might not succeed
+[49580:0x110000000]     4845 ms: Mark-sweep 130.6 (147.8) -> 130.6 (147.8) MB, 18.8 / 0.0 ms  (average mu = 0.088, current mu = 0.031) allocation failure scavenge might not succeed
+
+
+<--- JS stacktrace --->
+
+FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory
+....
+```
 
 ### `--heapsnapshot-signal=signal`
 <!-- YAML
@@ -544,14 +599,22 @@ added: v6.0.0
 
 Silence all process warnings (including deprecations).
 
+### `--node-memory-debug`
+<!-- YAML
+added: v15.0.0
+-->
+
+Enable extra debug checks for memory leaks in Node.js internals. This is
+usually only useful for developers debugging Node.js itself.
+
 ### `--openssl-config=file`
 <!-- YAML
 added: v6.9.0
 -->
 
 Load an OpenSSL configuration file on startup. Among other uses, this can be
-used to enable FIPS-compliant crypto if Node.js is built with
-`./configure --openssl-fips`.
+used to enable FIPS-compliant crypto if Node.js is built
+against FIPS-enabled OpenSSL.
 
 ### `--pending-deprecation`
 <!-- YAML
@@ -692,7 +755,7 @@ changes:
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/27312
     description: Changed from `--diagnostic-report-directory` to
-                 `--report-directory`
+                 `--report-directory`.
 -->
 
 Location at which the report will be generated.
@@ -709,7 +772,7 @@ changes:
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/27312
     description: changed from `--diagnostic-report-filename` to
-                 `--report-filename`
+                 `--report-filename`.
 -->
 
 Name of the file to which the report will be written.
@@ -727,7 +790,7 @@ changes:
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/27312
     description: changed from `--diagnostic-report-on-fatalerror` to
-                 `--report-on-fatalerror`
+                 `--report-on-fatalerror`.
 -->
 
 Enables the report to be triggered on fatal errors (internal errors within
@@ -748,7 +811,7 @@ changes:
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/27312
     description: changed from `--diagnostic-report-on-signal` to
-                 `--report-on-signal`
+                 `--report-on-signal`.
 -->
 
 Enables report to be generated upon receiving the specified (or predefined)
@@ -767,7 +830,7 @@ changes:
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/27312
     description: changed from `--diagnostic-report-signal` to
-                 `--report-signal`
+                 `--report-signal`.
 -->
 
 Sets or resets the signal for report generation (not supported on Windows).
@@ -785,12 +848,46 @@ changes:
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/27312
     description: changed from `--diagnostic-report-uncaught-exception` to
-                 `--report-uncaught-exception`
+                 `--report-uncaught-exception`.
 -->
 
 Enables report to be generated on uncaught exceptions. Useful when inspecting
 the JavaScript stack in conjunction with native stack and other runtime
 environment data.
+
+### `--secure-heap=n`
+<!-- YAML
+added: v15.6.0
+-->
+
+Initializes an OpenSSL secure heap of `n` bytes. When initialized, the
+secure heap is used for selected types of allocations within OpenSSL
+during key generation and other operations. This is useful, for instance,
+to prevent sensitive information from leaking due to pointer overruns
+or underruns.
+
+The secure heap is a fixed size and cannot be resized at runtime so,
+if used, it is important to select a large enough heap to cover all
+application uses.
+
+The heap size given must be a power of two. Any value less than 2
+will disable the secure heap.
+
+The secure heap is disabled by default.
+
+The secure heap is not available on Windows.
+
+See [`CRYPTO_secure_malloc_init`][] for more details.
+
+### `--secure-heap-min=n`
+<!-- YAML
+added: v15.6.0
+-->
+
+When using `--secure-heap`, the `--secure-heap-min` flag specifies the
+minimum allocation from the secure heap. The minimum value is `2`.
+The maximum value is the lesser of `--secure-heap` or `2147483647`.
+The value given must be a power of two.
 
 ### `--throw-deprecation`
 <!-- YAML
@@ -1003,19 +1100,20 @@ Track heap object allocations for heap snapshots.
 ### `--unhandled-rejections=mode`
 <!-- YAML
 added:
- - v12.0.0
- - v10.17.0
+  - v12.0.0
+  - v10.17.0
+changes:
+  - version: v15.0.0
+    pr-url: https://github.com/nodejs/node/pull/33021
+    description: Changed default mode to `throw`. Previously, a warning was
+                 emitted.
 -->
-
-By default all unhandled rejections trigger a warning plus a deprecation warning
-for the very first unhandled rejection in case no [`unhandledRejection`][] hook
-is used.
 
 Using this flag allows to change what should happen when an unhandled rejection
 occurs. One of the following modes can be chosen:
 
 * `throw`: Emit [`unhandledRejection`][]. If this hook is not set, raise the
-  unhandled rejection as an uncaught exception.
+  unhandled rejection as an uncaught exception. This is the default.
 * `strict`: Raise the unhandled rejection as an uncaught exception.
 * `warn`: Always trigger a warning, no matter if the [`unhandledRejection`][]
   hook is set or not but do not print the deprecation warning.
@@ -1154,6 +1252,9 @@ Preload the specified module at startup.
 Follows `require()`'s module resolution
 rules. `module` may be either a path to a file, or a node module name.
 
+Only CommonJS modules are supported. Attempting to preload a
+ES6 Module using `--require` will fail with an error.
+
 ### `-v`, `--version`
 <!-- YAML
 added: v0.1.3
@@ -1163,6 +1264,19 @@ Print node's version.
 
 ## Environment variables
 
+### `FORCE_COLOR=[1, 2, 3]`
+
+The `FORCE_COLOR` environment variable is used to
+enable ANSI colorized output. The value may be:
+
+* `1`, `true`, or the empty string `''` indicate 16-color support,
+* `2` to indicate 256-color support, or
+* `3` to indicate 16 million-color support.
+
+When `FORCE_COLOR` is used and set to a supported value, both the `NO_COLOR`,
+and `NODE_DISABLE_COLORS` environment variables are ignored.
+
+Any other value will result in colorized output being disabled.
 ### `NODE_DEBUG=module[,…]`
 <!-- YAML
 added: v0.1.32
@@ -1197,6 +1311,10 @@ options property is explicitly specified for a TLS or HTTPS client or server.
 
 This environment variable is ignored when `node` runs as setuid root or
 has Linux file capabilities set.
+
+The `NODE_EXTRA_CA_CERTS` environment variable is only read when the Node.js
+process is first launched. Changing the value at runtime using
+`process.env.NODE_EXTRA_CA_CERTS` has no effect on the current process.
 
 ### `NODE_ICU_DATA=file`
 <!-- YAML
@@ -1270,6 +1388,7 @@ Node.js options that are allowed are:
 * `--force-context-aware`
 * `--force-fips`
 * `--frozen-intrinsics`
+* `--heapsnapshot-near-heap-limit`
 * `--heapsnapshot-signal`
 * `--http-parser`
 * `--icu-data-dir`
@@ -1284,6 +1403,7 @@ Node.js options that are allowed are:
 * `--no-deprecation`
 * `--no-force-async-hooks-checks`
 * `--no-warnings`
+* `--node-memory-debug`
 * `--openssl-config`
 * `--pending-deprecation`
 * `--policy-integrity`
@@ -1299,6 +1419,8 @@ Node.js options that are allowed are:
 * `--report-signal`
 * `--report-uncaught-exception`
 * `--require`, `-r`
+* `--secure-heap-min`
+* `--secure-heap`
 * `--throw-deprecation`
 * `--title`
 * `--tls-cipher-list`
@@ -1504,6 +1626,11 @@ and the line lengths of the source file (in the key `lineLengths`).
 }
 ```
 
+### `NO_COLOR=<any>`
+
+[`NO_COLOR`][]  is an alias for `NODE_DISABLE_COLORS`. The value of the
+environment variable is arbitrary.
+
 ### `OPENSSL_CONF=file`
 <!-- YAML
 added: v6.11.0
@@ -1588,27 +1715,29 @@ $ node --max-old-space-size=1536 index.js
 ```
 
 [Chrome DevTools Protocol]: https://chromedevtools.github.io/devtools-protocol/
-[REPL]: repl.html
+[ECMAScript Module loader]: esm.md#esm_loaders
+[REPL]: repl.md
 [ScriptCoverage]: https://chromedevtools.github.io/devtools-protocol/tot/Profiler#type-ScriptCoverage
 [Source Map]: https://sourcemaps.info/spec.html
 [Subresource Integrity]: https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity
 [V8 JavaScript code coverage]: https://v8project.blogspot.com/2017/12/javascript-code-coverage.html
 [`--openssl-config`]: #cli_openssl_config_file
 [`Atomics.wait()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Atomics/wait
-[`Buffer`]: buffer.html#buffer_class_buffer
+[`Buffer`]: buffer.md#buffer_class_buffer
+[`CRYPTO_secure_malloc_init`]: https://www.openssl.org/docs/man1.1.0/man3/CRYPTO_secure_malloc_init.html
 [`NODE_OPTIONS`]: #cli_node_options_options
-[`SlowBuffer`]: buffer.html#buffer_class_slowbuffer
-[`process.setUncaughtExceptionCaptureCallback()`]: process.html#process_process_setuncaughtexceptioncapturecallback_fn
-[`tls.DEFAULT_MAX_VERSION`]: tls.html#tls_tls_default_max_version
-[`tls.DEFAULT_MIN_VERSION`]: tls.html#tls_tls_default_min_version
-[`unhandledRejection`]: process.html#process_event_unhandledrejection
-[`worker_threads.threadId`]: worker_threads.html#worker_threads_worker_threadid
-[context-aware]: addons.html#addons_context_aware_addons
-[customizing ESM specifier resolution]: esm.html#esm_customizing_esm_specifier_resolution_algorithm
-[debugger]: debugger.html
+[`NO_COLOR`]: https://no-color.org
+[`SlowBuffer`]: buffer.md#buffer_class_slowbuffer
+[`process.setUncaughtExceptionCaptureCallback()`]: process.md#process_process_setuncaughtexceptioncapturecallback_fn
+[`tls.DEFAULT_MAX_VERSION`]: tls.md#tls_tls_default_max_version
+[`tls.DEFAULT_MIN_VERSION`]: tls.md#tls_tls_default_min_version
+[`unhandledRejection`]: process.md#process_event_unhandledrejection
+[`worker_threads.threadId`]: worker_threads.md#worker_threads_worker_threadid
+[context-aware]: addons.md#addons_context_aware_addons
+[customizing ESM specifier resolution]: esm.md#esm_customizing_esm_specifier_resolution_algorithm
+[debugger]: debugger.md
 [debugging security implications]: https://nodejs.org/en/docs/guides/debugging-getting-started/#security-implications
-[emit_warning]: process.html#process_process_emitwarning_warning_type_code_ctor
-[experimental ECMAScript Module loader]: esm.html#esm_experimental_loaders
+[emit_warning]: process.md#process_process_emitwarning_warning_type_code_ctor
 [jitless]: https://v8.dev/blog/jitless
 [libuv threadpool documentation]: https://docs.libuv.org/en/latest/threadpool.html
 [remote code execution]: https://www.owasp.org/index.php/Code_Injection

@@ -158,16 +158,16 @@ static void InitializeVM() {
 
 #define RUN() simulator.RunFrom(reinterpret_cast<Instruction*>(code->entry()))
 
-#define END()                                                       \
-  __ Debug("End test.", __LINE__, TRACE_DISABLE | LOG_ALL);         \
-  core.Dump(&masm);                                                 \
-  __ PopCalleeSavedRegisters();                                     \
-  __ Ret();                                                         \
-  {                                                                 \
-    CodeDesc desc;                                                  \
-    __ GetCode(masm.isolate(), &desc);                              \
-    code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build(); \
-    if (FLAG_print_code) code->Print();                             \
+#define END()                                                                  \
+  __ Debug("End test.", __LINE__, TRACE_DISABLE | LOG_ALL);                    \
+  core.Dump(&masm);                                                            \
+  __ PopCalleeSavedRegisters();                                                \
+  __ Ret();                                                                    \
+  {                                                                            \
+    CodeDesc desc;                                                             \
+    __ GetCode(masm.isolate(), &desc);                                         \
+    code = Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build(); \
+    if (FLAG_print_code) code->Print();                                        \
   }
 
 #else  // ifdef USE_SIMULATOR.
@@ -204,15 +204,15 @@ static void InitializeVM() {
     f.Call();                                      \
   }
 
-#define END()                                                       \
-  core.Dump(&masm);                                                 \
-  __ PopCalleeSavedRegisters();                                     \
-  __ Ret();                                                         \
-  {                                                                 \
-    CodeDesc desc;                                                  \
-    __ GetCode(masm.isolate(), &desc);                              \
-    code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build(); \
-    if (FLAG_print_code) code->Print();                             \
+#define END()                                                                  \
+  core.Dump(&masm);                                                            \
+  __ PopCalleeSavedRegisters();                                                \
+  __ Ret();                                                                    \
+  {                                                                            \
+    CodeDesc desc;                                                             \
+    __ GetCode(masm.isolate(), &desc);                                         \
+    code = Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build(); \
+    if (FLAG_print_code) code->Print();                                        \
   }
 
 #endif  // ifdef USE_SIMULATOR.
@@ -1878,24 +1878,41 @@ TEST(branch_to_reg) {
 static void BtiHelper(Register ipreg) {
   SETUP();
 
-  Label jump_target, jump_call_target, call_target, done;
+  Label jump_target, jump_call_target, call_target, test_pacibsp,
+      pacibsp_target, done;
   START();
   UseScratchRegisterScope temps(&masm);
   temps.Exclude(ipreg);
+
   __ Adr(x0, &jump_target);
   __ Br(x0);
   __ Nop();
+
   __ Bind(&jump_target, BranchTargetIdentifier::kBtiJump);
   __ Adr(x0, &call_target);
   __ Blr(x0);
+
   __ Adr(ipreg, &jump_call_target);
+  __ Blr(ipreg);
+  __ Adr(lr, &test_pacibsp);  // Make Ret return to test_pacibsp.
+  __ Br(ipreg);
+
+  __ Bind(&test_pacibsp, BranchTargetIdentifier::kNone);
+  __ Adr(ipreg, &pacibsp_target);
   __ Blr(ipreg);
   __ Adr(lr, &done);  // Make Ret return to done label.
   __ Br(ipreg);
+
   __ Bind(&call_target, BranchTargetIdentifier::kBtiCall);
   __ Ret();
+
   __ Bind(&jump_call_target, BranchTargetIdentifier::kBtiJumpCall);
   __ Ret();
+
+  __ Bind(&pacibsp_target, BranchTargetIdentifier::kPacibsp);
+  __ Autibsp();
+  __ Ret();
+
   __ Bind(&done);
   END();
 
@@ -6815,6 +6832,63 @@ TEST(ldr_literal_range_max_dist_no_emission_2) {
 
 #endif
 
+static const PrefetchOperation kPrfmOperations[] = {
+    PLDL1KEEP, PLDL1STRM, PLDL2KEEP, PLDL2STRM, PLDL3KEEP, PLDL3STRM,
+
+    PLIL1KEEP, PLIL1STRM, PLIL2KEEP, PLIL2STRM, PLIL3KEEP, PLIL3STRM,
+
+    PSTL1KEEP, PSTL1STRM, PSTL2KEEP, PSTL2STRM, PSTL3KEEP, PSTL3STRM};
+
+TEST(prfm_regoffset_assem) {
+  INIT_V8();
+  SETUP();
+
+  START();
+  // The address used in prfm doesn't have to be valid.
+  __ Mov(x0, 0x0123456789abcdef);
+
+  CPURegList inputs(CPURegister::kRegister, kXRegSizeInBits, 10, 18);
+  __ Mov(x10, 0);
+  __ Mov(x11, 1);
+  __ Mov(x12, 8);
+  __ Mov(x13, 255);
+  __ Mov(x14, -0);
+  __ Mov(x15, -1);
+  __ Mov(x16, -8);
+  __ Mov(x17, -255);
+  __ Mov(x18, 0xfedcba9876543210);
+
+  for (int op = 0; op < (1 << ImmPrefetchOperation_width); op++) {
+    // Unallocated prefetch operations are ignored, so test all of them.
+    // We have to use the Assembler directly for this.
+    CPURegList loop = inputs;
+    while (!loop.IsEmpty()) {
+      __ prfm(op, MemOperand(x0, Register::Create(loop.PopLowestIndex().code(),
+                                                  kXRegSizeInBits)));
+    }
+  }
+
+  for (PrefetchOperation op : kPrfmOperations) {
+    // Also test named operations.
+    CPURegList loop = inputs;
+    while (!loop.IsEmpty()) {
+      Register input =
+          Register::Create(loop.PopLowestIndex().code(), kXRegSizeInBits);
+      __ prfm(op, MemOperand(x0, input, UXTW));
+      __ prfm(op, MemOperand(x0, input, UXTW, 3));
+      __ prfm(op, MemOperand(x0, input, LSL));
+      __ prfm(op, MemOperand(x0, input, LSL, 3));
+      __ prfm(op, MemOperand(x0, input, SXTW));
+      __ prfm(op, MemOperand(x0, input, SXTW, 3));
+      __ prfm(op, MemOperand(x0, input, SXTX));
+      __ prfm(op, MemOperand(x0, input, SXTX, 3));
+    }
+  }
+
+  END();
+  RUN();
+}
+
 TEST(add_sub_imm) {
   INIT_V8();
   SETUP();
@@ -11131,6 +11205,110 @@ TEST(fcvtzs) {
   CHECK_EQUAL_64(0x8000000000000400UL, x30);
 }
 
+static void FjcvtzsHelper(uint64_t value, uint64_t expected,
+                          uint32_t expected_z) {
+  SETUP();
+  START();
+  __ Fmov(d0, bit_cast<double>(value));
+  __ Fjcvtzs(w0, d0);
+  __ Mrs(x1, NZCV);
+  END();
+
+  if (CpuFeatures::IsSupported(JSCVT)) {
+    RUN();
+
+    CHECK_EQUAL_64(expected, x0);
+    CHECK_EQUAL_32(expected_z, w1);
+  }
+}
+
+TEST(fjcvtzs) {
+  // Simple values.
+  FjcvtzsHelper(0x0000000000000000, 0, ZFlag);   // 0.0
+  FjcvtzsHelper(0x0010000000000000, 0, NoFlag);  // The smallest normal value.
+  FjcvtzsHelper(0x3fdfffffffffffff, 0, NoFlag);  // The value just below 0.5.
+  FjcvtzsHelper(0x3fe0000000000000, 0, NoFlag);  // 0.5
+  FjcvtzsHelper(0x3fe0000000000001, 0, NoFlag);  // The value just above 0.5.
+  FjcvtzsHelper(0x3fefffffffffffff, 0, NoFlag);  // The value just below 1.0.
+  FjcvtzsHelper(0x3ff0000000000000, 1, ZFlag);   // 1.0
+  FjcvtzsHelper(0x3ff0000000000001, 1, NoFlag);  // The value just above 1.0.
+  FjcvtzsHelper(0x3ff8000000000000, 1, NoFlag);  // 1.5
+  FjcvtzsHelper(0x4024000000000000, 10, ZFlag);  // 10
+  FjcvtzsHelper(0x7fefffffffffffff, 0, NoFlag);  // The largest finite value.
+
+  // Infinity.
+  FjcvtzsHelper(0x7ff0000000000000, 0, NoFlag);
+
+  // NaNs.
+  //  - Quiet NaNs
+  FjcvtzsHelper(0x7ff923456789abcd, 0, NoFlag);
+  FjcvtzsHelper(0x7ff8000000000000, 0, NoFlag);
+  //  - Signalling NaNs
+  FjcvtzsHelper(0x7ff123456789abcd, 0, NoFlag);
+  FjcvtzsHelper(0x7ff0000000000001, 0, NoFlag);
+
+  // Subnormals.
+  //  - A recognisable bit pattern.
+  FjcvtzsHelper(0x000123456789abcd, 0, NoFlag);
+  //  - The largest subnormal value.
+  FjcvtzsHelper(0x000fffffffffffff, 0, NoFlag);
+  //  - The smallest subnormal value.
+  FjcvtzsHelper(0x0000000000000001, 0, NoFlag);
+
+  // The same values again, but negated.
+  FjcvtzsHelper(0x8000000000000000, 0, NoFlag);
+  FjcvtzsHelper(0x8010000000000000, 0, NoFlag);
+  FjcvtzsHelper(0xbfdfffffffffffff, 0, NoFlag);
+  FjcvtzsHelper(0xbfe0000000000000, 0, NoFlag);
+  FjcvtzsHelper(0xbfe0000000000001, 0, NoFlag);
+  FjcvtzsHelper(0xbfefffffffffffff, 0, NoFlag);
+  FjcvtzsHelper(0xbff0000000000000, 0xffffffff, ZFlag);
+  FjcvtzsHelper(0xbff0000000000001, 0xffffffff, NoFlag);
+  FjcvtzsHelper(0xbff8000000000000, 0xffffffff, NoFlag);
+  FjcvtzsHelper(0xc024000000000000, 0xfffffff6, ZFlag);
+  FjcvtzsHelper(0xffefffffffffffff, 0, NoFlag);
+  FjcvtzsHelper(0xfff0000000000000, 0, NoFlag);
+  FjcvtzsHelper(0xfff923456789abcd, 0, NoFlag);
+  FjcvtzsHelper(0xfff8000000000000, 0, NoFlag);
+  FjcvtzsHelper(0xfff123456789abcd, 0, NoFlag);
+  FjcvtzsHelper(0xfff0000000000001, 0, NoFlag);
+  FjcvtzsHelper(0x800123456789abcd, 0, NoFlag);
+  FjcvtzsHelper(0x800fffffffffffff, 0, NoFlag);
+  FjcvtzsHelper(0x8000000000000001, 0, NoFlag);
+  // Test floating-point numbers of every possible exponent, most of the
+  // expected values are zero but there is a range of exponents where the
+  // results are shifted parts of this mantissa.
+  uint64_t mantissa = 0x0001234567890abc;
+
+  // Between an exponent of 0 and 52, only some of the top bits of the
+  // mantissa are above the decimal position of doubles so the mantissa is
+  // shifted to the right down to just those top bits. Above 52, all bits
+  // of the mantissa are shifted left above the decimal position until it
+  // reaches 52 + 64 where all the bits are shifted out of the range of 64-bit
+  // integers.
+  int first_exp_boundary = 52;
+  int second_exp_boundary = first_exp_boundary + 64;
+  for (int exponent = 0; exponent < 2048; exponent++) {
+    int e = exponent - 1023;
+
+    uint64_t expected = 0;
+    if (e < 0) {
+      expected = 0;
+    } else if (e <= first_exp_boundary) {
+      expected = (UINT64_C(1) << e) | (mantissa >> (52 - e));
+      expected &= 0xffffffff;
+    } else if (e < second_exp_boundary) {
+      expected = (mantissa << (e - 52)) & 0xffffffff;
+    } else {
+      expected = 0;
+    }
+
+    uint64_t value = (static_cast<uint64_t>(exponent) << 52) | mantissa;
+    FjcvtzsHelper(value, expected, NoFlag);
+    FjcvtzsHelper(value | kDSignMask, (-expected) & 0xffffffff, NoFlag);
+  }
+}
+
 TEST(fcvtzu) {
   INIT_V8();
   SETUP();
@@ -11599,9 +11777,9 @@ TEST(system_msr) {
   const uint64_t fpcr_core = 0x07C00000;
 
   // All FPCR fields (including fields which may be read-as-zero):
-  //  Stride, Len
+  //  Stride, FZ16, Len
   //  IDE, IXE, UFE, OFE, DZE, IOE
-  const uint64_t fpcr_all = fpcr_core | 0x00379F00;
+  const uint64_t fpcr_all = fpcr_core | 0x003F9F00;
 
   SETUP();
 
@@ -11662,12 +11840,15 @@ TEST(system_msr) {
   CHECK_EQUAL_64(0, x10);
 }
 
-TEST(system_pauth_a) {
+TEST(system_pauth_b) {
+#ifdef DEBUG
+  i::FLAG_sim_abort_on_bad_auth = false;
+#endif
   SETUP();
   START();
 
   // Exclude x16 and x17 from the scratch register list so we can use
-  // Pac/Autia1716 safely.
+  // Pac/Autib1716 safely.
   UseScratchRegisterScope temps(&masm);
   temps.Exclude(x16, x17);
   temps.Include(x10, x11);
@@ -11681,29 +11862,29 @@ TEST(system_pauth_a) {
 
   // Generate PACs using the 3 system instructions.
   __ Mov(x17, 0x0000000012345678);
-  __ Pacia1716();
+  __ Pacib1716();
   __ Mov(x0, x17);
 
   __ Mov(lr, 0x0000000012345678);
-  __ Paciasp();
+  __ Pacibsp();
   __ Mov(x2, lr);
 
   // Authenticate the pointers above.
   __ Mov(x17, x0);
-  __ Autia1716();
+  __ Autib1716();
   __ Mov(x3, x17);
 
   __ Mov(lr, x2);
-  __ Autiasp();
+  __ Autibsp();
   __ Mov(x5, lr);
 
   // Attempt to authenticate incorrect pointers.
   __ Mov(x17, x2);
-  __ Autia1716();
+  __ Autib1716();
   __ Mov(x6, x17);
 
   __ Mov(lr, x0);
-  __ Autiasp();
+  __ Autibsp();
   __ Mov(x8, lr);
 
   // Restore stack pointer.
@@ -11729,8 +11910,8 @@ TEST(system_pauth_a) {
   CHECK_EQUAL_64(0x0000000012345678, x5);
 
   // Pointers corrupted after failing to authenticate.
-  CHECK_EQUAL_64(0x0020000012345678, x6);
-  CHECK_EQUAL_64(0x0020000012345678, x8);
+  CHECK_EQUAL_64(0x0040000012345678, x6);
+  CHECK_EQUAL_64(0x0040000012345678, x8);
 
 #endif  // USE_SIMULATOR
 }
@@ -14759,7 +14940,7 @@ TEST(pool_size) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  code = Factory::CodeBuilder(isolate, desc, Code::STUB)
+  code = Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING)
              .set_self_reference(masm.CodeObject())
              .Build();
 

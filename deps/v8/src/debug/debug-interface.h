@@ -10,6 +10,7 @@
 #include "include/v8-inspector.h"
 #include "include/v8-util.h"
 #include "include/v8.h"
+#include "src/base/platform/time.h"
 #include "src/common/globals.h"
 #include "src/debug/interface-types.h"
 #include "src/utils/vector.h"
@@ -23,6 +24,7 @@ struct CoverageScript;
 struct TypeProfileEntry;
 struct TypeProfileScript;
 class Coverage;
+class DisableBreak;
 class PostponeInterruptsScope;
 class Script;
 class TypeProfile;
@@ -108,7 +110,7 @@ V8_EXPORT_PRIVATE void BreakRightNow(Isolate* isolate);
 // the isolate to be entered for further JavaScript execution.
 V8_EXPORT_PRIVATE void SetTerminateOnResume(Isolate* isolate);
 
-bool AllFramesOnStackAreBlackboxed(Isolate* isolate);
+bool CanBreakProgram(Isolate* isolate);
 
 class Script;
 
@@ -217,6 +219,10 @@ class DebugDelegate {
                                     const debug::Location& end) {
     return false;
   }
+  virtual bool ShouldBeSkipped(v8::Local<v8::debug::Script> script, int line,
+                               int column) {
+    return false;
+  }
 };
 
 V8_EXPORT_PRIVATE void SetDebugDelegate(Isolate* isolate,
@@ -246,6 +252,7 @@ Local<Function> GetBuiltin(Isolate* isolate, Builtin builtin);
 V8_EXPORT_PRIVATE void SetConsoleDelegate(Isolate* isolate,
                                           ConsoleDelegate* delegate);
 
+V8_DEPRECATED("See http://crbug.com/v8/10566.")
 int GetStackFrameId(v8::Local<v8::StackFrame> frame);
 
 v8::Local<v8::StackTrace> GetDetailedStackTrace(Isolate* isolate,
@@ -416,6 +423,8 @@ class V8_EXPORT_PRIVATE ScopeIterator {
 
   ScopeIterator() = default;
   virtual ~ScopeIterator() = default;
+  ScopeIterator(const ScopeIterator&) = delete;
+  ScopeIterator& operator=(const ScopeIterator&) = delete;
 
   enum ScopeType {
     ScopeTypeGlobal = 0,
@@ -442,18 +451,16 @@ class V8_EXPORT_PRIVATE ScopeIterator {
 
   virtual bool SetVariableValue(v8::Local<v8::String> name,
                                 v8::Local<v8::Value> value) = 0;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ScopeIterator);
 };
 
 class V8_EXPORT_PRIVATE StackTraceIterator {
  public:
-  static bool SupportsWasmDebugEvaluate();
   static std::unique_ptr<StackTraceIterator> Create(Isolate* isolate,
                                                     int index = 0);
   StackTraceIterator() = default;
   virtual ~StackTraceIterator() = default;
+  StackTraceIterator(const StackTraceIterator&) = delete;
+  StackTraceIterator& operator=(const StackTraceIterator&) = delete;
 
   virtual bool Done() const = 0;
   virtual void Advance() = 0;
@@ -470,11 +477,6 @@ class V8_EXPORT_PRIVATE StackTraceIterator {
   virtual bool Restart() = 0;
   virtual v8::MaybeLocal<v8::Value> Evaluate(v8::Local<v8::String> source,
                                              bool throw_on_side_effect) = 0;
-  virtual v8::MaybeLocal<v8::String> EvaluateWasm(
-      internal::Vector<const internal::byte> source, int frame_index) = 0;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(StackTraceIterator);
 };
 
 class QueryObjectPredicate {
@@ -500,6 +502,11 @@ enum class NativeAccessorType {
 
 int64_t GetNextRandomInt64(v8::Isolate* isolate);
 
+using RuntimeCallCounterCallback =
+    std::function<void(const char* name, int64_t count, base::TimeDelta time)>;
+void EnumerateRuntimeCallCounters(v8::Isolate* isolate,
+                                  RuntimeCallCounterCallback callback);
+
 enum class EvaluateGlobalMode {
   kDefault,
   kDisableBreaks,
@@ -517,7 +524,11 @@ bool SetFunctionBreakpoint(v8::Local<v8::Function> function,
 
 v8::Platform* GetCurrentPlatform();
 
-class PostponeInterruptsScope {
+void ForceGarbageCollection(
+    v8::Isolate* isolate,
+    v8::EmbedderHeapTracer::EmbedderStackState embedder_stack_state);
+
+class V8_NODISCARD PostponeInterruptsScope {
  public:
   explicit PostponeInterruptsScope(v8::Isolate* isolate);
   ~PostponeInterruptsScope();
@@ -526,8 +537,18 @@ class PostponeInterruptsScope {
   std::unique_ptr<i::PostponeInterruptsScope> scope_;
 };
 
+class V8_NODISCARD DisableBreakScope {
+ public:
+  explicit DisableBreakScope(v8::Isolate* isolate);
+  ~DisableBreakScope();
+
+ private:
+  std::unique_ptr<i::DisableBreak> scope_;
+};
+
 class WeakMap : public v8::Object {
  public:
+  WeakMap() = delete;
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT v8::MaybeLocal<v8::Value> Get(
       v8::Local<v8::Context> context, v8::Local<v8::Value> key);
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT v8::MaybeLocal<WeakMap> Set(
@@ -536,9 +557,6 @@ class WeakMap : public v8::Object {
 
   V8_EXPORT_PRIVATE static Local<WeakMap> New(v8::Isolate* isolate);
   V8_INLINE static WeakMap* Cast(Value* obj);
-
- private:
-  WeakMap();
 };
 
 /**
@@ -549,6 +567,7 @@ class WeakMap : public v8::Object {
  */
 class V8_EXPORT_PRIVATE AccessorPair : public v8::Value {
  public:
+  AccessorPair() = delete;
   v8::Local<v8::Value> getter();
   v8::Local<v8::Value> setter();
 
@@ -556,7 +575,6 @@ class V8_EXPORT_PRIVATE AccessorPair : public v8::Value {
   V8_INLINE static AccessorPair* Cast(v8::Value* obj);
 
  private:
-  AccessorPair();
   static void CheckCast(v8::Value* obj);
 };
 
@@ -593,35 +611,11 @@ class PropertyIterator {
   virtual bool is_array_index() = 0;
 };
 
-// Wrapper around v8::internal::WasmValue.
-class V8_EXPORT_PRIVATE WasmValue : public v8::Value {
- public:
-  static bool IsWasmValue(v8::Local<v8::Value> obj);
-  V8_INLINE static WasmValue* Cast(v8::Value* obj);
-  int value_type();
-  // Get the underlying values as a byte array, this is only valid if value_type
-  // is i32, i64, f32, f64, or s128.
-  v8::Local<v8::Array> bytes();
-  // Get the underlying anyref, only valid if value_type is anyref.
-  v8::Local<v8::Value> ref();
-
- private:
-  WasmValue();
-  static void CheckCast(v8::Value* obj);
-};
-
 AccessorPair* AccessorPair::Cast(v8::Value* value) {
 #ifdef V8_ENABLE_CHECKS
   CheckCast(value);
 #endif
   return static_cast<AccessorPair*>(value);
-}
-
-WasmValue* WasmValue::Cast(v8::Value* value) {
-#ifdef V8_ENABLE_CHECKS
-  CheckCast(value);
-#endif
-  return static_cast<WasmValue*>(value);
 }
 
 MaybeLocal<Message> GetMessageFromPromise(Local<Promise> promise);

@@ -358,7 +358,7 @@ inline T* Environment::GetBindingData(v8::Local<v8::Context> context) {
       context->GetAlignedPointerFromEmbedderData(
           ContextEmbedderIndex::kBindingListIndex));
   DCHECK_NOT_NULL(map);
-  auto it = map->find(T::binding_data_name);
+  auto it = map->find(T::type_name);
   if (UNLIKELY(it == map->end())) return nullptr;
   T* result = static_cast<T*>(it->second.get());
   DCHECK_NOT_NULL(result);
@@ -377,14 +377,10 @@ inline T* Environment::AddBindingData(
       context->GetAlignedPointerFromEmbedderData(
           ContextEmbedderIndex::kBindingListIndex));
   DCHECK_NOT_NULL(map);
-  auto result = map->emplace(T::binding_data_name, item);
+  auto result = map->emplace(T::type_name, item);
   CHECK(result.second);
   DCHECK_EQ(GetBindingData<T>(context), item.get());
   return item.get();
-}
-
-inline Environment* Environment::GetThreadLocalEnv() {
-  return static_cast<Environment*>(uv_key_get(&thread_local_env));
 }
 
 inline v8::Isolate* Environment::isolate() const {
@@ -614,6 +610,22 @@ inline const std::string& Environment::exec_path() const {
   return exec_path_;
 }
 
+inline std::string Environment::GetCwd() {
+  char cwd[PATH_MAX_BYTES];
+  size_t size = PATH_MAX_BYTES;
+  const int err = uv_cwd(cwd, &size);
+
+  if (err == 0) {
+    CHECK_GT(size, 0);
+    return cwd;
+  }
+
+  // This can fail if the cwd is deleted. In that case, fall back to
+  // exec_path.
+  const std::string& exec_path = exec_path_;
+  return exec_path.substr(0, exec_path.find_last_of(kPathSeparator));
+}
+
 #if HAVE_INSPECTOR
 inline void Environment::set_coverage_directory(const char* dir) {
   coverage_directory_ = std::string(dir);
@@ -768,8 +780,12 @@ inline bool Environment::has_run_bootstrapping_code() const {
   return has_run_bootstrapping_code_;
 }
 
-inline void Environment::set_has_run_bootstrapping_code(bool value) {
-  has_run_bootstrapping_code_ = value;
+inline void Environment::DoneBootstrapping() {
+  has_run_bootstrapping_code_ = true;
+  // This adjusts the return value of base_object_created_after_bootstrap() so
+  // that tests that check the count do not have to account for internally
+  // created BaseObjects.
+  base_object_created_by_bootstrap_ = base_object_count_;
 }
 
 inline bool Environment::has_serialized_options() const {
@@ -806,14 +822,6 @@ bool Environment::filehandle_close_warning() const {
 
 void Environment::set_filehandle_close_warning(bool on) {
   emit_filehandle_warning_ = on;
-}
-
-bool Environment::emit_insecure_umask_warning() const {
-  return emit_insecure_umask_warning_;
-}
-
-void Environment::set_emit_insecure_umask_warning(bool on) {
-  emit_insecure_umask_warning_ = on;
 }
 
 void Environment::set_source_maps_enabled(bool on) {
@@ -877,11 +885,6 @@ inline const Mutex& Environment::extra_linked_bindings_mutex() const {
 
 inline performance::PerformanceState* Environment::performance_state() {
   return performance_state_.get();
-}
-
-inline std::unordered_map<std::string, uint64_t>*
-    Environment::performance_marks() {
-  return &performance_marks_;
 }
 
 inline IsolateData* Environment::isolate_data() const {
@@ -1020,7 +1023,25 @@ inline void Environment::SetInstanceMethod(v8::Local<v8::FunctionTemplate> that,
   t->SetClassName(name_string);
 }
 
-void Environment::AddCleanupHook(void (*fn)(void*), void* arg) {
+inline void Environment::SetConstructorFunction(
+    v8::Local<v8::Object> that,
+    const char* name,
+    v8::Local<v8::FunctionTemplate> tmpl) {
+  SetConstructorFunction(that, OneByteString(isolate(), name), tmpl);
+}
+
+inline void Environment::SetConstructorFunction(
+    v8::Local<v8::Object> that,
+    v8::Local<v8::String> name,
+    v8::Local<v8::FunctionTemplate> tmpl) {
+  tmpl->SetClassName(name);
+  that->Set(
+      context(),
+      name,
+      tmpl->GetFunction(context()).ToLocalChecked()).Check();
+}
+
+void Environment::AddCleanupHook(CleanupCallback fn, void* arg) {
   auto insertion_info = cleanup_hooks_.emplace(CleanupHookCallback {
     fn, arg, cleanup_hook_counter_++
   });
@@ -1028,7 +1049,7 @@ void Environment::AddCleanupHook(void (*fn)(void*), void* arg) {
   CHECK_EQ(insertion_info.second, true);
 }
 
-void Environment::RemoveCleanupHook(void (*fn)(void*), void* arg) {
+void Environment::RemoveCleanupHook(CleanupCallback fn, void* arg) {
   CleanupHookCallback search { fn, arg, 0 };
   cleanup_hooks_.erase(search);
 }
@@ -1059,12 +1080,27 @@ void Environment::ForEachBaseObject(T&& iterator) {
   }
 }
 
+template <typename T>
+void Environment::ForEachBindingData(T&& iterator) {
+  BindingDataStore* map = static_cast<BindingDataStore*>(
+      context()->GetAlignedPointerFromEmbedderData(
+          ContextEmbedderIndex::kBindingListIndex));
+  DCHECK_NOT_NULL(map);
+  for (auto& it : *map) {
+    iterator(it.first, it.second);
+  }
+}
+
 void Environment::modify_base_object_count(int64_t delta) {
   base_object_count_ += delta;
 }
 
+int64_t Environment::base_object_created_after_bootstrap() const {
+  return base_object_count_ - base_object_created_by_bootstrap_;
+}
+
 int64_t Environment::base_object_count() const {
-  return base_object_count_ - initial_base_object_count_;
+  return base_object_count_;
 }
 
 void Environment::set_main_utf16(std::unique_ptr<v8::String::Value> str) {

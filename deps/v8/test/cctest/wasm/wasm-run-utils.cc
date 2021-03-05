@@ -19,10 +19,10 @@ namespace internal {
 namespace wasm {
 
 TestingModuleBuilder::TestingModuleBuilder(
-    Zone* zone, ManuallyImportedJSFunction* maybe_import, ExecutionTier tier,
-    RuntimeExceptionSupport exception_support, LowerSimd lower_simd)
+    Zone* zone, ManuallyImportedJSFunction* maybe_import,
+    TestExecutionTier tier, RuntimeExceptionSupport exception_support,
+    LowerSimd lower_simd)
     : test_module_(std::make_shared<WasmModule>()),
-      test_module_ptr_(test_module_.get()),
       isolate_(CcTest::InitIsolateOnce()),
       enabled_features_(WasmFeatures::FromIsolate(isolate_)),
       execution_tier_(tier),
@@ -49,25 +49,31 @@ TestingModuleBuilder::TestingModuleBuilder(
     // Manually compile an import wrapper and insert it into the instance.
     CodeSpaceMemoryModificationScope modification_scope(isolate_->heap());
     auto resolved = compiler::ResolveWasmImportCall(
-        maybe_import->js_function, maybe_import->sig, enabled_features_);
+        maybe_import->js_function, maybe_import->sig,
+        instance_object_->module(), enabled_features_);
     compiler::WasmImportCallKind kind = resolved.first;
     Handle<JSReceiver> callable = resolved.second;
     WasmImportWrapperCache::ModificationScope cache_scope(
         native_module_->import_wrapper_cache());
-    WasmImportWrapperCache::CacheKey key(kind, maybe_import->sig);
+    WasmImportWrapperCache::CacheKey key(
+        kind, maybe_import->sig,
+        static_cast<int>(maybe_import->sig->parameter_count()));
     auto import_wrapper = cache_scope[key];
     if (import_wrapper == nullptr) {
       import_wrapper = CompileImportWrapper(
           isolate_->wasm_engine(), native_module_, isolate_->counters(), kind,
-          maybe_import->sig, &cache_scope);
+          maybe_import->sig,
+          static_cast<int>(maybe_import->sig->parameter_count()), &cache_scope);
     }
 
     ImportedFunctionEntry(instance_object_, maybe_import_index)
         .SetWasmToJs(isolate_, callable, import_wrapper);
   }
 
-  if (tier == ExecutionTier::kInterpreter) {
-    interpreter_ = WasmDebugInfo::SetupForTesting(instance_object_);
+  if (tier == TestExecutionTier::kInterpreter) {
+    interpreter_ = std::make_unique<WasmInterpreter>(
+        isolate_, test_module_.get(),
+        ModuleWireBytes{native_module_->wire_bytes()}, instance_object_);
   }
 }
 
@@ -163,15 +169,16 @@ Handle<JSFunction> TestingModuleBuilder::WrapCode(uint32_t index) {
 }
 
 void TestingModuleBuilder::AddIndirectFunctionTable(
-    const uint16_t* function_indexes, uint32_t table_size) {
-  auto instance = instance_object();
+    const uint16_t* function_indexes, uint32_t table_size,
+    ValueType table_type) {
+  Handle<WasmInstanceObject> instance = instance_object();
   uint32_t table_index = static_cast<uint32_t>(test_module_->tables.size());
   test_module_->tables.emplace_back();
   WasmTable& table = test_module_->tables.back();
   table.initial_size = table_size;
   table.maximum_size = table_size;
   table.has_maximum_size = true;
-  table.type = kWasmFuncRef;
+  table.type = table_type;
 
   {
     // Allocate the indirect function table.
@@ -190,7 +197,7 @@ void TestingModuleBuilder::AddIndirectFunctionTable(
   WasmInstanceObject::EnsureIndirectFunctionTableWithMinimumSize(
       instance_object(), table_index, table_size);
   Handle<WasmTableObject> table_obj =
-      WasmTableObject::New(isolate_, table.type, table.initial_size,
+      WasmTableObject::New(isolate_, instance, table.type, table.initial_size,
                            table.has_maximum_size, table.maximum_size, nullptr);
 
   WasmTableObject::AddDispatchTable(isolate_, table_obj, instance_object_,
@@ -304,7 +311,7 @@ CompilationEnv TestingModuleBuilder::CreateCompilationEnv() {
   // trap_handler::IsTrapHandlerEnabled().
   const bool is_trap_handler_enabled =
       V8_TRAP_HANDLER_SUPPORTED && i::FLAG_wasm_trap_handler;
-  return {test_module_ptr_,
+  return {test_module_.get(),
           is_trap_handler_enabled ? kUseTrapHandler : kNoTrapHandler,
           runtime_exception_support_, enabled_features_, lower_simd()};
 }
@@ -328,8 +335,9 @@ Handle<WasmInstanceObject> TestingModuleBuilder::InitInstanceObject() {
   auto native_module = isolate_->wasm_engine()->NewNativeModule(
       isolate_, enabled_features_, test_module_, code_size_estimate);
   native_module->SetWireBytes(OwnedVector<const uint8_t>());
-  Handle<Script> script =
-      isolate_->wasm_engine()->GetOrCreateScript(isolate_, native_module);
+  constexpr Vector<const char> kNoSourceUrl{"", 0};
+  Handle<Script> script = isolate_->wasm_engine()->GetOrCreateScript(
+      isolate_, native_module, kNoSourceUrl);
 
   Handle<WasmModuleObject> module_object =
       WasmModuleObject::New(isolate_, std::move(native_module), script);
@@ -478,7 +486,7 @@ Handle<Code> WasmFunctionWrapper::GetWrapperCode() {
     }
 
     OptimizedCompilationInfo info(ArrayVector("testing"), graph()->zone(),
-                                  Code::C_WASM_ENTRY);
+                                  CodeKind::C_WASM_ENTRY);
     code_ = compiler::Pipeline::GenerateCodeForTesting(
         &info, isolate, call_descriptor, graph(),
         AssemblerOptions::Default(isolate));
@@ -496,10 +504,13 @@ Handle<Code> WasmFunctionWrapper::GetWrapperCode() {
   return code;
 }
 
+// This struct is just a type tag for Zone::NewArray<T>(size_t) call.
+struct WasmFunctionCompilerBuffer {};
+
 void WasmFunctionCompiler::Build(const byte* start, const byte* end) {
   size_t locals_size = local_decls.Size();
   size_t total_size = end - start + locals_size + 1;
-  byte* buffer = static_cast<byte*>(zone()->New(total_size));
+  byte* buffer = zone()->NewArray<byte, WasmFunctionCompilerBuffer>(total_size);
   // Prepend the local decls to the code.
   local_decls.Emit(buffer);
   // Emit the code.
@@ -547,7 +558,13 @@ void WasmFunctionCompiler::Build(const byte* start, const byte* end) {
   WasmCode* code = native_module->PublishCode(
       native_module->AddCompiledCode(std::move(result)));
   DCHECK_NOT_NULL(code);
-  if (WasmCode::ShouldBeLogged(isolate())) code->LogCode(isolate());
+  DisallowGarbageCollection no_gc;
+  Script script = builder_->instance_object()->module_object().script();
+  std::unique_ptr<char[]> source_url =
+      String::cast(script.source_url()).ToCString();
+  if (WasmCode::ShouldBeLogged(isolate())) {
+    code->LogCode(isolate(), source_url.get(), script.id());
+  }
 }
 
 WasmFunctionCompiler::WasmFunctionCompiler(Zone* zone, const FunctionSig* sig,
@@ -586,7 +603,7 @@ FunctionSig* WasmRunnerBase::CreateSig(Zone* zone, MachineType return_type,
     CHECK_NE(MachineType::None(), param);
     sig_types[idx++] = ValueType::For(param);
   }
-  return new (zone) FunctionSig(return_count, param_count, sig_types);
+  return zone->New<FunctionSig>(return_count, param_count, sig_types);
 }
 
 // static

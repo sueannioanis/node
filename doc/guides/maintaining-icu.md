@@ -33,7 +33,7 @@ $ node -p process.versions
 }
 ```
 
-### Time Zone Data
+### Time zone data
 
 Time zone data files are updated independently of ICU CLDR data.  ICU and its
 main data files do not need to be upgraded in order to apply time zone data file
@@ -44,13 +44,13 @@ and announces them on the [`tz-announce`](https://mm.icann.org/pipermail/tz-anno
 mailing list.
 
 The Unicode project takes new releases and publishes
-[updated time zone data files](https://github.com/unicode-org/icu-data/tree/master/tzdata/icunew)
+[updated time zone data files](https://github.com/unicode-org/icu-data/tree/HEAD/tzdata/icunew)
 in the icu/icu-data repository.
 
 All modern versions of Node.js use the version 44 ABI of the time zone data
 files.
 
-#### Example: Updating the ICU `.dat` File
+#### Example: updating the ICU `.dat` file
 
 * Decompress `deps/icu/source/data/in/icudt##l.dat.bz2`, where `##` is
   the ICU major version number.
@@ -68,7 +68,7 @@ files.
 * Build, test, verifying `process.versions.tz` matches the desired version.
 * Create a new minor version release.
 
-## Release Schedule
+## Release schedule
 
 ICU typically has >1 release a year, particularly coinciding with a major
 release of [Unicode][]. The current release schedule is available on the [ICU][]
@@ -83,7 +83,7 @@ V8 will not compile.
 
 ```c
 // deps/v8/src/objects/intl-objects.h
-#define V8_MINIMUM_ICU_VERSION 64
+#define V8_MINIMUM_ICU_VERSION 65
 ```
 
 V8 in Node.js depends on the ICU version supplied by Node.js.
@@ -104,7 +104,7 @@ should be sufficient).
 ```bash
 ./configure \
     --with-intl=full-icu \
-    --with-icu-source=http://download.icu-project.org/files/icu4c/58.1/icu4c-58_1-src.tgz
+    --with-icu-source=https://github.com/unicode-org/icu/releases/download/release-67-1/icu4c-67_1-src.tgz
 make
 ```
 
@@ -158,7 +158,7 @@ process.versions.icu;
 new Intl.DateTimeFormat('es', { month: 'long' }).format(new Date(9E8));
 ```
 
-(This should print your updated ICU version number, and also `January` again.)
+(This should print your updated ICU version number, and also `enero` again.)
 
 You are ready to check in the updated `deps/icu-small`. This is a big commit,
 so make this a separate commit from the smaller changes.
@@ -237,7 +237,7 @@ You should see a message such as:
 INFO: Using floating patch "tools/icu/patches/63/source/tools/toolutil/pkg_genc.cpp" from "tools/icu"
 ```
 
-### Clean Up
+### Clean up
 
 Any patches older than the minimum version given in `tools/icu/icu_versions.json`
 ought to be deleted, because they will never be used.
@@ -261,8 +261,8 @@ Node.js (see the top level README.md). Only modifying `icu-small` would cause
 the patch not to be landed in case the user specifies the ICU source code
 another way.
 
+[CLDR]: https://unicode.org/cldr
+[Ecma402]: https://github.com/tc39/ecma402
 [ICU]: http://icu-project.org
 [Unicode]: https://unicode.org
 [tz]: https://www.iana.org/time-zones
-[CLDR]: https://unicode.org/cldr
-[Ecma402]: https://github.com/tc39/ecma402

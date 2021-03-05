@@ -38,9 +38,14 @@ namespace internal {
 // cleared when the map they refer to is not otherwise reachable.
 class V8_EXPORT_PRIVATE TransitionsAccessor {
  public:
+  // For concurrent access, use the other constructor.
   inline TransitionsAccessor(Isolate* isolate, Map map,
-                             DisallowHeapAllocation* no_gc);
-  inline TransitionsAccessor(Isolate* isolate, Handle<Map> map);
+                             DisallowGarbageCollection* no_gc);
+  // {concurrent_access} signals that the TransitionsAccessor will only be used
+  // in background threads. It acquires a reader lock for critical paths, as
+  // well as blocking the accessor from modifying the TransitionsArray.
+  inline TransitionsAccessor(Isolate* isolate, Handle<Map> map,
+                             bool concurrent_access = false);
   // Insert a new transition into |map|'s transition array, extending it
   // as necessary.
   // Requires the constructor that takes a Handle<Map> to have been used.
@@ -89,8 +94,8 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   // Traverse the transition tree in postorder.
   void TraverseTransitionTree(TraverseCallback callback, void* data) {
     // Make sure that we do not allocate in the callback.
-    DisallowHeapAllocation no_allocation;
-    TraverseTransitionTreeInternal(callback, data, &no_allocation);
+    DisallowGarbageCollection no_gc;
+    TraverseTransitionTreeInternal(callback, data, &no_gc);
   }
 
   // ===== PROTOTYPE TRANSITIONS =====
@@ -117,7 +122,7 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   static void PrintOneTransition(std::ostream& os, Name key, Map target);
   void PrintTransitionTree();
   void PrintTransitionTree(std::ostream& os, int level,
-                           DisallowHeapAllocation* no_gc);
+                           DisallowGarbageCollection* no_gc);
 #endif
 #if DEBUG
   void CheckNewTransitionsAreConsistent(TransitionArray old_transitions,
@@ -142,6 +147,10 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
     DCHECK(!needs_reload_);
     return encoding_;
   }
+
+  inline int Capacity();
+
+  inline TransitionArray transitions();
 
  private:
   friend class MarkCompactCollector;  // For HasSimpleTransitionTo.
@@ -173,15 +182,14 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   WeakFixedArray GetPrototypeTransitions();
 
   void TraverseTransitionTreeInternal(TraverseCallback callback, void* data,
-                                      DisallowHeapAllocation* no_gc);
-
-  inline TransitionArray transitions();
+                                      DisallowGarbageCollection* no_gc);
 
   Isolate* isolate_;
   Handle<Map> map_handle_;
   Map map_;
   MaybeObject raw_transitions_;
   Encoding encoding_;
+  bool concurrent_access_;
 #if DEBUG
   bool needs_reload_;
 #endif
@@ -228,10 +236,10 @@ class TransitionArray : public WeakFixedArray {
   int GetSortedKeyIndex(int transition_number) { return transition_number; }
   inline int number_of_entries() const;
 #ifdef DEBUG
-  V8_EXPORT_PRIVATE bool IsSortedNoDuplicates(int valid_entries = -1);
+  V8_EXPORT_PRIVATE bool IsSortedNoDuplicates();
 #endif
 
-  void Sort();
+  V8_EXPORT_PRIVATE void Sort();
 
   void PrintInternal(std::ostream& os);
 
@@ -259,6 +267,9 @@ class TransitionArray : public WeakFixedArray {
 
   inline int SearchNameForTesting(Name name,
                                   int* out_insertion_index = nullptr);
+
+  inline Map SearchAndGetTargetForTesting(PropertyKind kind, Name name,
+                                          PropertyAttributes attributes);
 
  private:
   friend class Factory;
@@ -296,8 +307,8 @@ class TransitionArray : public WeakFixedArray {
   int Search(PropertyKind kind, Name name, PropertyAttributes attributes,
              int* out_insertion_index = nullptr);
 
-  Map SearchAndGetTarget(PropertyKind kind, Name name,
-                         PropertyAttributes attributes);
+  V8_EXPORT_PRIVATE Map SearchAndGetTarget(PropertyKind kind, Name name,
+                                           PropertyAttributes attributes);
 
   // Search a non-property transition (like elements kind, observe or frozen
   // transitions).
@@ -337,8 +348,6 @@ class TransitionArray : public WeakFixedArray {
                                    PropertyAttributes attributes2);
 
   inline void Set(int transition_number, Name key, MaybeObject target);
-
-  void Zap(Isolate* isolate);
 
   OBJECT_CONSTRUCTORS(TransitionArray, WeakFixedArray);
 };

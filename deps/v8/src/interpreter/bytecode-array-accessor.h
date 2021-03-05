@@ -91,6 +91,9 @@ class V8_EXPORT_PRIVATE BytecodeArrayAccessor {
   BytecodeArrayAccessor(Handle<BytecodeArray> bytecode_array,
                         int initial_offset);
 
+  BytecodeArrayAccessor(const BytecodeArrayAccessor&) = delete;
+  BytecodeArrayAccessor& operator=(const BytecodeArrayAccessor&) = delete;
+
   void SetOffset(int offset);
 
   void ApplyDebugBreak();
@@ -109,6 +112,8 @@ class V8_EXPORT_PRIVATE BytecodeArrayAccessor {
   int32_t GetImmediateOperand(int operand_index) const;
   uint32_t GetIndexOperand(int operand_index) const;
   FeedbackSlot GetSlotOperand(int operand_index) const;
+  Register GetReceiver() const;
+  Register GetParameter(int parameter_index) const;
   uint32_t GetRegisterCountOperand(int operand_index) const;
   Register GetRegisterOperand(int operand_index) const;
   int GetRegisterOperandRange(int operand_index) const;
@@ -121,6 +126,10 @@ class V8_EXPORT_PRIVATE BytecodeArrayAccessor {
   Handle<Object> GetConstantForIndexOperand(int operand_index,
                                             Isolate* isolate) const;
 
+  // Returns the relative offset of the branch target at the current bytecode.
+  // It is an error to call this method if the bytecode is not for a jump or
+  // conditional jump. Returns a negative offset for backward jumps.
+  int GetRelativeJumpTargetOffset() const;
   // Returns the absolute offset of the branch target at the current bytecode.
   // It is an error to call this method if the bytecode is not for a jump or
   // conditional jump.
@@ -138,6 +147,8 @@ class V8_EXPORT_PRIVATE BytecodeArrayAccessor {
 
   std::ostream& PrintTo(std::ostream& os) const;
 
+  int bytecode_length() const { return bytecode_length_; }
+
  private:
   bool OffsetInBounds() const;
 
@@ -148,11 +159,10 @@ class V8_EXPORT_PRIVATE BytecodeArrayAccessor {
   void UpdateOperandScale();
 
   std::unique_ptr<AbstractBytecodeArray> bytecode_array_;
+  const int bytecode_length_;
   int bytecode_offset_;
   OperandScale operand_scale_;
   int prefix_offset_;
-
-  DISALLOW_COPY_AND_ASSIGN(BytecodeArrayAccessor);
 };
 
 }  // namespace interpreter

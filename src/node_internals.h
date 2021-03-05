@@ -100,10 +100,6 @@ std::string GetHumanReadableProcessName();
 void InitializeContextRuntime(v8::Local<v8::Context>);
 bool InitializePrimordials(v8::Local<v8::Context> context);
 
-namespace task_queue {
-void PromiseRejectCallback(v8::PromiseRejectMessage message);
-}  // namespace task_queue
-
 class NodeArrayBufferAllocator : public ArrayBufferAllocator {
  public:
   inline uint32_t* zero_fill_field() { return &zero_fill_field_; }
@@ -203,6 +199,12 @@ v8::MaybeLocal<v8::Value> InternalMakeCallback(
     int argc,
     v8::Local<v8::Value> argv[],
     async_context asyncContext);
+
+v8::MaybeLocal<v8::Value> MakeSyncCallback(v8::Isolate* isolate,
+                                           v8::Local<v8::Object> recv,
+                                           v8::Local<v8::Function> callback,
+                                           int argc,
+                                           v8::Local<v8::Value> argv[]);
 
 class InternalCallbackScope {
  public:
@@ -367,6 +369,10 @@ class DiagnosticFilename {
   std::string filename_;
 };
 
+namespace heap {
+bool WriteSnapshot(v8::Isolate* isolate, const char* filename);
+}
+
 class TraceEventScope {
  public:
   TraceEventScope(const char* category,
@@ -397,6 +403,8 @@ BaseObjectPtr<AsyncWrap> CreateHeapSnapshotStream(
 namespace fs {
 std::string Basename(const std::string& str, const std::string& extension);
 }  // namespace fs
+
+node_module napi_module_to_node_module(const napi_module* mod);
 
 }  // namespace node
 

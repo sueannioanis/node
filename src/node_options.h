@@ -115,6 +115,7 @@ class EnvironmentOptions : public Options {
   bool experimental_vm_modules = false;
   bool expose_internals = false;
   bool frozen_intrinsics = false;
+  int64_t heap_snapshot_near_heap_limit = 0;
   std::string heap_snapshot_signal;
   uint64_t max_http_header_size = 16 * 1024;
   bool no_deprecation = false;
@@ -150,6 +151,12 @@ class EnvironmentOptions : public Options {
   bool trace_warnings = false;
   std::string unhandled_rejections;
   std::string userland_loader;
+  bool verify_base_objects =
+#ifdef DEBUG
+      true;
+#else
+      false;
+#endif  // DEBUG
 
   bool syntax_check_only = false;
   bool has_eval_string = false;
@@ -229,6 +236,8 @@ class PerProcessOptions : public Options {
 #if HAVE_OPENSSL
   std::string openssl_config;
   std::string tls_cipher_list = DEFAULT_CIPHER_LIST_CORE;
+  int64_t secure_heap = 0;
+  int64_t secure_heap_min = 2;
 #ifdef NODE_OPENSSL_CERT_STORE
   bool ssl_openssl_cert_store = true;
 #else
@@ -236,10 +245,8 @@ class PerProcessOptions : public Options {
 #endif
   bool use_openssl_ca = false;
   bool use_bundled_ca = false;
-#if NODE_FIPS_MODE
   bool enable_fips_crypto = false;
   bool force_fips_crypto = false;
-#endif
 #endif
 
   // Per-process because reports can be triggered outside a known V8 context.

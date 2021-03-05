@@ -1,10 +1,5 @@
 # Pull Requests
 
-There are two fundamental components of the Pull Request process: one concrete
-and technical, and one more process oriented. The concrete and technical
-component involves the specific details of setting up your local environment
-so that you can make the actual changes. This is where we will start.
-
 * [Dependencies](#dependencies)
 * [Setting up your local environment](#setting-up-your-local-environment)
   * [Step 1: Fork](#step-1-fork)
@@ -35,6 +30,7 @@ so that you can make the actual changes. This is where we will start.
   * [CI Testing](#ci-testing)
   * [Waiting Until the Pull Request Gets Landed](#waiting-until-the-pull-request-gets-landed)
   * [Check Out the Collaborator Guide](#check-out-the-collaborator-guide)
+  * [Appendix: Subsystems](#appendix-subsystems)
 
 ## Dependencies
 
@@ -130,7 +126,17 @@ Any documentation you write (including code comments and API documentation)
 should follow the [Style Guide](../doc-style-guide.md). Code samples
 included in the API docs will also be checked when running `make lint` (or
 `vcbuild.bat lint` on Windows). If you are adding to or deprecating an API,
-use `REPLACEME` for the version number in the documentation YAML.
+add or change the appropriate YAML documentation. Use `REPLACEME` for the
+version number in the documentation YAML:
+
+```markdown
+### `request.method`
+<!-- YAML
+added: REPLACEME
+-->
+
+* {string} The request method.
+```
 
 For contributing C++ code, you may want to look at the
 [C++ Style Guide](../cpp-style-guide.md), as well as the
@@ -161,9 +167,9 @@ A good commit message should describe what changed and why.
      less, and no more than 72 characters)
    * be entirely in lowercase with the exception of proper nouns, acronyms, and
    the words that refer to code, like function/variable names
-   * be prefixed with the name of the changed subsystem and start with an
-   imperative verb. Check the output of `git log --oneline files/you/changed` to
-   find out what subsystems your changes touch.
+   * be prefixed with the name of the changed [subsystem](#appendix-subsystems)
+   and start with an imperative verb. Check the output of `git log --oneline
+   files/you/changed` to find out what subsystems your changes touch.
 
    Examples:
    * `net: add localAddress and localPort to Socket`
@@ -257,30 +263,9 @@ $ git push origin my-branch
 
 ### Step 8: Opening the Pull Request
 
-From within GitHub, opening a new Pull Request will present you with a template
-that should be filled out:
-
-```markdown
-<!--
-Thank you for your Pull Request. Please provide a description above and review
-the requirements below.
-
-Bug fixes and new features should include tests and possibly benchmarks.
-
-Contributors guide: https://github.com/nodejs/node/blob/master/CONTRIBUTING.md
--->
-
-#### Checklist
-<!-- Remove items that do not apply. For completed items, change [ ] to [x]. -->
-
-- [ ] `make -j4 test` (UNIX), or `vcbuild test` (Windows) passes
-- [ ] tests and/or benchmarks are included
-- [ ] documentation is changed or added
-- [ ] commit message follows [commit guidelines](https://github.com/nodejs/node/blob/master/doc/guides/contributing/pull-requests.md#commit-message-guidelines)
-```
-
-Please try to do your best at filling out the details, but feel free to skip
-parts if you're not sure what to put.
+From within GitHub, opening a new Pull Request will present you with a
+[pull request template][]. Please try to do your best at filling out the
+details, but feel free to skip parts if you're not sure what to put.
 
 Once opened, Pull Requests are usually reviewed within a few days.
 
@@ -593,15 +578,27 @@ widely used, so don't be discouraged!
 If you want to know more about the code review and the landing process, see the
 [Collaborator Guide][].
 
-[approved]: #getting-approvals-for-your-pull-request
-[benchmark results]: ../writing-and-running-benchmarks.md
+### Appendix: Subsystems
+
+* `lib/*.js` (`assert`, `buffer`, etc.)
+* `build`
+* `doc`
+* `lib / src`
+* `test`
+* `tools`
+
+More than one subsystem may be valid for any particular issue or pull request.
+
 [Building guide]: ../../../BUILDING.md
 [CI (Continuous Integration) test run]: #ci-testing
-[Code of Conduct]: https://github.com/nodejs/admin/blob/master/CODE_OF_CONDUCT.md
+[Code of Conduct]: https://github.com/nodejs/admin/blob/HEAD/CODE_OF_CONDUCT.md
 [Collaborator Guide]: ../collaborator-guide.md
+[IRC in the #node-dev channel]: https://webchat.freenode.net?channels=node-dev&uio=d4
+[Onboarding guide]: ../../../onboarding.md
+[approved]: #getting-approvals-for-your-pull-request
+[benchmark results]: ../writing-and-running-benchmarks.md
 [guide for writing tests in Node.js]: ../writing-tests.md
 [hiding-a-comment]: https://help.github.com/articles/managing-disruptive-comments/#hiding-a-comment
 [https://ci.nodejs.org/]: https://ci.nodejs.org/
-[IRC in the #node-dev channel]: https://webchat.freenode.net?channels=node-dev&uio=d4
-[Onboarding guide]: ../../../onboarding.md
+[pull request template]: https://raw.githubusercontent.com/nodejs/node/HEAD/.github/PULL_REQUEST_TEMPLATE.md
 [running tests]: ../../../BUILDING.md#running-tests

@@ -24,9 +24,9 @@
 const common = require('./common.js');
 const fs = require('fs');
 const unified = require('unified');
-const find = require('unist-util-find');
 const visit = require('unist-util-visit');
 const markdown = require('remark-parse');
+const gfm = require('remark-gfm');
 const remark2rehype = require('remark-rehype');
 const raw = require('rehype-raw');
 const htmlStringify = require('rehype-stringify');
@@ -51,10 +51,13 @@ function navClasses() {
 }
 
 const gtocPath = path.join(docPath, 'api', 'index.md');
-const gtocMD = fs.readFileSync(gtocPath, 'utf8').replace(/^<!--.*?-->/gms, '');
+const gtocMD = fs.readFileSync(gtocPath, 'utf8')
+  .replace(/\(([^#?]+?)\.md\)/ig, (_, filename) => `(${filename}.html)`)
+  .replace(/^<!--.*?-->/gms, '');
 const gtocHTML = unified()
   .use(markdown)
-  .use(remark2rehype, { allowDangerousHTML: true })
+  .use(gfm)
+  .use(remark2rehype, { allowDangerousHtml: true })
   .use(raw)
   .use(navClasses)
   .use(htmlStringify)
@@ -62,6 +65,18 @@ const gtocHTML = unified()
 
 const templatePath = path.join(docPath, 'template.html');
 const template = fs.readFileSync(templatePath, 'utf8');
+
+function wrapSections(content) {
+  let firstTime = true;
+  return content.toString()
+    .replace(/<h2/g, (heading) => {
+      if (firstTime) {
+        firstTime = false;
+        return '<section>' + heading;
+      }
+      return '</section><section>' + heading;
+    }) + (firstTime ? '' : '</section>');
+}
 
 function toHTML({ input, content, filename, nodeVersion, versions }) {
   filename = path.basename(filename, '.md');
@@ -76,7 +91,7 @@ function toHTML({ input, content, filename, nodeVersion, versions }) {
                      .replace('__GTOC__', gtocHTML.replace(
                        `class="nav-${id}"`, `class="nav-${id} active"`))
                      .replace('__EDIT_ON_GITHUB__', editOnGitHub(filename))
-                     .replace('__CONTENT__', content.toString());
+                     .replace('__CONTENT__', wrapSections(content));
 
   const docCreated = input.match(
     /<!--\s*introduced_in\s*=\s*v([0-9]+)\.([0-9]+)\.[0-9]+\s*-->/);
@@ -93,7 +108,13 @@ function toHTML({ input, content, filename, nodeVersion, versions }) {
 // Set the section name based on the first header.  Default to 'Index'.
 function firstHeader() {
   return (tree, file) => {
-    const heading = find(tree, { type: 'heading' });
+    let heading;
+    visit(tree, (node) => {
+      if (node.type === 'heading') {
+        heading = node;
+        return false;
+      }
+    });
 
     if (heading && heading.children.length) {
       const recursiveTextContent = (node) =>
@@ -216,7 +237,7 @@ function preprocessElements({ filename }) {
 
           // Do not link to the section we are already in.
           const noLinking = filename.includes('documentation') &&
-            heading !== null && heading.children[0].value === 'Stability Index';
+            heading !== null && heading.children[0].value === 'Stability index';
 
           // Collapse blockquote and paragraph into a single node
           node.type = 'paragraph';
@@ -281,7 +302,8 @@ function parseYAML(text) {
     meta.changes.forEach((change) => {
       const description = unified()
         .use(markdown)
-        .use(remark2rehype, { allowDangerousHTML: true })
+        .use(gfm)
+        .use(remark2rehype, { allowDangerousHtml: true })
         .use(raw)
         .use(htmlStringify)
         .processSync(change.description).toString();
@@ -377,12 +399,19 @@ function buildToc({ filename, apilinks }) {
       node.children.push({ type: 'html', value: anchor });
     });
 
-    file.toc = unified()
-      .use(markdown)
-      .use(remark2rehype, { allowDangerousHTML: true })
-      .use(raw)
-      .use(htmlStringify)
-      .processSync(toc).toString();
+    if (toc !== '') {
+      file.toc = '<details id="toc" open><summary>Table of contents</summary>' +
+        unified()
+          .use(markdown)
+          .use(gfm)
+          .use(remark2rehype, { allowDangerousHtml: true })
+          .use(raw)
+          .use(htmlStringify)
+          .processSync(toc).toString() +
+        '</details>';
+    } else {
+      file.toc = '<!-- TOC -->';
+    }
   };
 }
 

@@ -1,5 +1,6 @@
 #include "node_sockaddr-inl.h"  // NOLINT(build/include)
 #include "env-inl.h"
+#include "base64-inl.h"
 #include "base_object-inl.h"
 #include "memory_tracker-inl.h"
 #include "uv.h"
@@ -17,7 +18,6 @@ using v8::FunctionTemplate;
 using v8::Local;
 using v8::MaybeLocal;
 using v8::Object;
-using v8::String;
 using v8::Value;
 
 namespace {
@@ -302,7 +302,7 @@ bool in_network_ipv6_ipv4(
     return false;
 
   ptr += sizeof(mask);
-  uint32_t check = ptr[0] << 24 | ptr[1] << 16 | ptr[2] << 8 | ptr[3];
+  uint32_t check = ReadUint32BE(ptr);
 
   return (check & m) == (htonl(net_in->sin_addr.s_addr) & m);
 }
@@ -674,11 +674,9 @@ void SocketAddressBlockListWrap::Initialize(
     void* priv) {
   Environment* env = Environment::GetCurrent(context);
 
-  Local<String> name = FIXED_ONE_BYTE_STRING(env->isolate(), "BlockList");
   Local<FunctionTemplate> t =
       env->NewFunctionTemplate(SocketAddressBlockListWrap::New);
   t->InstanceTemplate()->SetInternalFieldCount(BaseObject::kInternalFieldCount);
-  t->SetClassName(name);
 
   env->SetProtoMethod(t, "addAddress", SocketAddressBlockListWrap::AddAddress);
   env->SetProtoMethod(t, "addRange", SocketAddressBlockListWrap::AddRange);
@@ -687,8 +685,7 @@ void SocketAddressBlockListWrap::Initialize(
   env->SetProtoMethod(t, "getRules", SocketAddressBlockListWrap::GetRules);
 
   env->set_blocklist_instance_template(t->InstanceTemplate());
-  target->Set(env->context(), name,
-              t->GetFunction(env->context()).ToLocalChecked()).FromJust();
+  env->SetConstructorFunction(target, "BlockList", t);
 
   NODE_DEFINE_CONSTANT(target, AF_INET);
   NODE_DEFINE_CONSTANT(target, AF_INET6);

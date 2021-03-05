@@ -24,7 +24,7 @@ Node.js specific, and a newer API that implements the same
 [WHATWG URL Standard][] used by web browsers.
 
 A comparison between the WHATWG and Legacy APIs is provided below. Above the URL
-`'http://user:pass@sub.example.com:8080/p/a/t/h?query=string#hash'`, properties
+`'https://user:pass@sub.example.com:8080/p/a/t/h?query=string#hash'`, properties
 of an object returned by the legacy `url.parse()` are shown. Below it are
 properties of a WHATWG `URL` object.
 
@@ -210,9 +210,15 @@ const myURL = new URL('https://example.org:81/foo');
 console.log(myURL.hostname);
 // Prints example.org
 
+// Setting the hostname does not change the port
 myURL.hostname = 'example.com:82';
 console.log(myURL.href);
 // Prints https://example.com:81/foo
+
+// Use myURL.host to change the hostname and port
+myURL.host = 'example.org:82';
+console.log(myURL.href);
+// Prints https://example.org:82/foo
 ```
 
 Invalid host name values assigned to the `hostname` property are ignored.
@@ -246,7 +252,7 @@ will be thrown.
 #### `url.origin`
 <!-- YAML
 changes:
-  - version: REPLACEME
+  - version: v15.0.0
     pr-url: https://github.com/nodejs/node/pull/33325
     description: The scheme "gopher" is no longer special and `url.origin` now
                  returns `'null'` for it.
@@ -316,7 +322,7 @@ to percent-encode may vary somewhat from what the [`url.parse()`][] and
 #### `url.port`
 <!-- YAML
 changes:
-  - version: REPLACEME
+  - version: v15.0.0
     pr-url: https://github.com/nodejs/node/pull/33325
     description: The scheme "gopher" is no longer special.
 -->
@@ -423,7 +429,7 @@ Invalid URL protocol values assigned to the `protocol` property are ignored.
 ##### Special schemes
 <!-- YAML
 changes:
-  - version: REPLACEME
+  - version: v15.0.0
     pr-url: https://github.com/nodejs/node/pull/33325
     description: The scheme "gopher" is no longer special.
 -->
@@ -560,7 +566,7 @@ with [`JSON.stringify()`][].
 ```js
 const myURLs = [
   new URL('https://www.example.com'),
-  new URL('https://test.example.org')
+  new URL('https://test.example.org'),
 ];
 console.log(JSON.stringify(myURLs));
 // Prints ["https://www.example.com/","https://test.example.org/"]
@@ -697,7 +703,7 @@ let params;
 params = new URLSearchParams([
   ['user', 'abc'],
   ['query', 'first'],
-  ['query', 'second']
+  ['query', 'second'],
 ]);
 console.log(params.toString());
 // Prints 'user=abc&query=first&query=second'
@@ -722,7 +728,7 @@ console.log(params.toString());
 
 // Each key-value pair must have exactly two elements
 new URLSearchParams([
-  ['user', 'abc', 'error']
+  ['user', 'abc', 'error'],
 ]);
 // Throws TypeError [ERR_INVALID_TUPLE]:
 //        Each query pair must be an iterable [name, value] tuple
@@ -1023,6 +1029,50 @@ new URL('/some/path%.c', 'file:'); // Incorrect: file:///some/path%.c
 pathToFileURL('/some/path%.c');    // Correct:   file:///some/path%25.c (POSIX)
 ```
 
+### `url.urlToHttpOptions(url)`
+<!-- YAML
+added: v15.7.0
+-->
+
+* `url` {URL} The [WHATWG URL][] object to convert to an options object.
+* Returns: {Object} Options object
+  * `protocol` {string} Protocol to use.
+  * `hostname` {string} A domain name or IP address of the server to issue the
+    request to.
+  * `hash` {string} The fragment portion of the URL.
+  * `search` {string} The serialized query portion of the URL.
+  * `pathname` {string} The path portion of the URL.
+  * `path` {string} Request path. Should include query string if any.
+    E.G. `'/index.html?page=12'`. An exception is thrown when the request path
+    contains illegal characters. Currently, only spaces are rejected but that
+    may change in the future.
+  * `href` {string} The serialized URL.
+  * `port` {number} Port of remote server.
+  * `auth` {string} Basic authentication i.e. `'user:password'` to compute an
+    Authorization header.
+
+This utility function converts a URL object into an ordinary options object as
+expected by the [`http.request()`][] and [`https.request()`][] APIs.
+
+```js
+const { urlToHttpOptions } = require('url');
+const myURL = new URL('https://a:b@測試?abc#foo');
+
+console.log(urlToHttpOptions(myUrl));
+/**
+{
+  protocol: 'https:',
+  hostname: 'xn--g6w251d',
+  hash: '#foo',
+  search: '?abc',
+  pathname: '/',
+  path: '/?abc',
+  href: 'https://a:b@xn--g6w251d/?abc#foo',
+  auth: 'a:b'
+}
+*/
+```
+
 ## Legacy URL API
 <!-- YAML
 deprecated: v11.0.0
@@ -1286,7 +1336,9 @@ changes:
     pr-url: https://github.com/nodejs/node/pull/8215
     description: The `auth` fields are now kept intact when `from` and `to`
                  refer to the same host.
-  - version: v6.5.0, v4.6.2
+  - version:
+    - v6.5.0
+    - v4.6.2
     pr-url: https://github.com/nodejs/node/pull/8214
     description: The `port` field is copied correctly now.
   - version: v6.0.0
@@ -1308,6 +1360,24 @@ const url = require('url');
 url.resolve('/one/two/three', 'four');         // '/one/two/four'
 url.resolve('http://example.com/', '/one');    // 'http://example.com/one'
 url.resolve('http://example.com/one', '/two'); // 'http://example.com/two'
+```
+
+You can achieve the same result using the WHATWG URL API:
+
+```js
+function resolve(from, to) {
+  const resolvedUrl = new URL(to, new URL(from, 'resolve://'));
+  if (resolvedUrl.protocol === 'resolve:') {
+    // `from` is a relative URL.
+    const { pathname, search, hash } = resolvedUrl;
+    return pathname + search + hash;
+  }
+  return resolvedUrl.toString();
+}
+
+resolve('/one/two/three', 'four');         // '/one/two/four'
+resolve('http://example.com/', '/one');    // 'http://example.com/one'
+resolve('http://example.com/one', '/two'); // 'http://example.com/two'
 ```
 
 <a id="whatwg-percent-encoding"></a>
@@ -1370,14 +1440,20 @@ console.log(myURL.origin);
 // Prints https://xn--1xa.example.com
 ```
 
-[`Error`]: errors.html#errors_class_error
+[ICU]: intl.md#intl_options_for_building_node_js
+[Punycode]: https://tools.ietf.org/html/rfc5891#section-4.4
+[WHATWG URL Standard]: https://url.spec.whatwg.org/
+[WHATWG URL]: #url_the_whatwg_url_api
+[`Error`]: errors.md#errors_class_error
 [`JSON.stringify()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify
 [`Map`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map
-[`TypeError`]: errors.html#errors_class_typeerror
+[`TypeError`]: errors.md#errors_class_typeerror
 [`URLSearchParams`]: #url_class_urlsearchparams
 [`array.toString()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/toString
+[`http.request()`]: http.md#http_http_request_options_callback
+[`https.request()`]: https.md#https_https_request_options_callback
 [`new URL()`]: #url_new_url_input_base
-[`querystring`]: querystring.html
+[`querystring`]: querystring.md
 [`require('url').format()`]: #url_url_format_url_options
 [`url.domainToASCII()`]: #url_url_domaintoascii_domain
 [`url.domainToUnicode()`]: #url_url_domaintounicode_domain
@@ -1389,10 +1465,6 @@ console.log(myURL.origin);
 [`url.toString()`]: #url_url_tostring
 [`urlSearchParams.entries()`]: #url_urlsearchparams_entries
 [`urlSearchParams@@iterator()`]: #url_urlsearchparams_symbol_iterator
-[ICU]: intl.html#intl_options_for_building_node_js
-[Punycode]: https://tools.ietf.org/html/rfc5891#section-4.4
-[WHATWG URL Standard]: https://url.spec.whatwg.org/
-[WHATWG URL]: #url_the_whatwg_url_api
 [examples of parsed URLs]: https://url.spec.whatwg.org/#example-url-parsing
 [host name spoofing]: https://hackerone.com/reports/678487
 [legacy `urlObject`]: #url_legacy_urlobject

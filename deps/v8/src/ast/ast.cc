@@ -11,11 +11,11 @@
 #include "src/ast/scopes.h"
 #include "src/base/hashmap.h"
 #include "src/base/logging.h"
+#include "src/base/platform/wrappers.h"
 #include "src/builtins/builtins-constructor.h"
 #include "src/builtins/builtins.h"
 #include "src/common/assert-scope.h"
-#include "src/execution/off-thread-isolate.h"
-#include "src/heap/off-thread-factory-inl.h"
+#include "src/heap/local-factory-inl.h"
 #include "src/numbers/conversions-inl.h"
 #include "src/numbers/double.h"
 #include "src/objects/contexts.h"
@@ -224,12 +224,6 @@ bool FunctionLiteral::AllowsLazyCompilation() {
   return scope()->AllowsLazyCompilation();
 }
 
-bool FunctionLiteral::SafeToSkipArgumentsAdaptor() const {
-  return language_mode() == LanguageMode::kStrict &&
-         scope()->arguments() == nullptr &&
-         scope()->rest_parameter() == nullptr;
-}
-
 int FunctionLiteral::start_position() const {
   return scope()->start_position();
 }
@@ -273,7 +267,7 @@ std::unique_ptr<char[]> FunctionLiteral::GetDebugName() const {
     }
   }
   std::unique_ptr<char[]> result(new char[result_vec.size() + 1]);
-  memcpy(result.get(), result_vec.data(), result_vec.size());
+  base::Memcpy(result.get(), result_vec.data(), result_vec.size());
   result[result_vec.size()] = '\0';
   return result;
 }
@@ -335,10 +329,9 @@ void ObjectLiteral::CalculateEmitStore(Zone* zone) {
   const auto GETTER = ObjectLiteral::Property::GETTER;
   const auto SETTER = ObjectLiteral::Property::SETTER;
 
-  ZoneAllocationPolicy allocator(zone);
-
-  CustomMatcherZoneHashMap table(
-      Literal::Match, ZoneHashMap::kDefaultHashMapCapacity, allocator);
+  CustomMatcherZoneHashMap table(Literal::Match,
+                                 ZoneHashMap::kDefaultHashMapCapacity,
+                                 ZoneAllocationPolicy(zone));
   for (int i = properties()->length() - 1; i >= 0; i--) {
     ObjectLiteral::Property* property = properties()->at(i);
     if (property->is_computed_name()) continue;
@@ -347,7 +340,7 @@ void ObjectLiteral::CalculateEmitStore(Zone* zone) {
     DCHECK(!literal->IsNullLiteral());
 
     uint32_t hash = literal->Hash();
-    ZoneHashMap::Entry* entry = table.LookupOrInsert(literal, hash, allocator);
+    ZoneHashMap::Entry* entry = table.LookupOrInsert(literal, hash);
     if (entry->value == nullptr) {
       entry->value = property;
     } else {
@@ -440,7 +433,7 @@ int ObjectLiteral::InitDepthAndFlags() {
     // literal with fast elements will be a waste of space.
     uint32_t element_index = 0;
     if (key->AsArrayIndex(&element_index)) {
-      max_element_index = Max(element_index, max_element_index);
+      max_element_index = std::max(element_index, max_element_index);
       elements++;
     } else {
       DCHECK(key->IsPropertyName());
@@ -522,7 +515,7 @@ void ObjectLiteral::BuildBoilerplateDescription(LocalIsolate* isolate) {
 template EXPORT_TEMPLATE_DEFINE(V8_BASE_EXPORT) void ObjectLiteral::
     BuildBoilerplateDescription(Isolate* isolate);
 template EXPORT_TEMPLATE_DEFINE(V8_BASE_EXPORT) void ObjectLiteral::
-    BuildBoilerplateDescription(OffThreadIsolate* isolate);
+    BuildBoilerplateDescription(LocalIsolate* isolate);
 
 bool ObjectLiteral::IsFastCloningSupported() const {
   // The CreateShallowObjectLiteratal builtin doesn't copy elements, and object
@@ -662,7 +655,7 @@ void ArrayLiteral::BuildBoilerplateDescription(LocalIsolate* isolate) {
 
       Object boilerplate_value = *GetBoilerplateValue(element, isolate);
       // We shouldn't allocate after creating the boilerplate value.
-      DisallowHeapAllocation no_gc;
+      DisallowGarbageCollection no_gc;
 
       if (boilerplate_value.IsTheHole(isolate)) {
         DCHECK(IsHoleyElementsKind(kind));
@@ -696,8 +689,9 @@ void ArrayLiteral::BuildBoilerplateDescription(LocalIsolate* isolate) {
 template EXPORT_TEMPLATE_DEFINE(
     V8_BASE_EXPORT) void ArrayLiteral::BuildBoilerplateDescription(Isolate*
                                                                        isolate);
-template EXPORT_TEMPLATE_DEFINE(V8_BASE_EXPORT) void ArrayLiteral::
-    BuildBoilerplateDescription(OffThreadIsolate* isolate);
+template EXPORT_TEMPLATE_DEFINE(
+    V8_BASE_EXPORT) void ArrayLiteral::BuildBoilerplateDescription(LocalIsolate*
+                                                                       isolate);
 
 bool ArrayLiteral::IsFastCloningSupported() const {
   return depth() <= 1 &&
@@ -737,7 +731,7 @@ template EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
         Expression* expression, Isolate* isolate);
 template EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
     Handle<Object> MaterializedLiteral::GetBoilerplateValue(
-        Expression* expression, OffThreadIsolate* isolate);
+        Expression* expression, LocalIsolate* isolate);
 
 int MaterializedLiteral::InitDepthAndFlags() {
   if (IsArrayLiteral()) return AsArrayLiteral()->InitDepthAndFlags();
@@ -772,7 +766,7 @@ void MaterializedLiteral::BuildConstants(LocalIsolate* isolate) {
 template EXPORT_TEMPLATE_DEFINE(
     V8_BASE_EXPORT) void MaterializedLiteral::BuildConstants(Isolate* isolate);
 template EXPORT_TEMPLATE_DEFINE(
-    V8_BASE_EXPORT) void MaterializedLiteral::BuildConstants(OffThreadIsolate*
+    V8_BASE_EXPORT) void MaterializedLiteral::BuildConstants(LocalIsolate*
                                                                  isolate);
 
 template <typename LocalIsolate>
@@ -814,7 +808,7 @@ template EXPORT_TEMPLATE_DEFINE(V8_BASE_EXPORT)
         Isolate* isolate);
 template EXPORT_TEMPLATE_DEFINE(V8_BASE_EXPORT)
     Handle<TemplateObjectDescription> GetTemplateObject::GetOrBuildDescription(
-        OffThreadIsolate* isolate);
+        LocalIsolate* isolate);
 
 static bool IsCommutativeOperationWithSmiLiteral(Token::Value op) {
   // Add is not commutative due to potential for string addition.
@@ -927,6 +921,7 @@ Call::CallType Call::GetCallType() const {
   }
   if (property != nullptr) {
     if (property->IsPrivateReference()) {
+      if (is_optional_chain) return PRIVATE_OPTIONAL_CHAIN_CALL;
       return PRIVATE_CALL;
     }
     bool is_super = property->IsSuperAccess();
@@ -949,9 +944,7 @@ Call::CallType Call::GetCallType() const {
 
 CaseClause::CaseClause(Zone* zone, Expression* label,
                        const ScopedPtrList<Statement>& statements)
-    : label_(label), statements_(0, nullptr) {
-  statements.CopyTo(&statements_, zone);
-}
+    : label_(label), statements_(statements.ToConstVector(), zone) {}
 
 bool Literal::IsPropertyName() const {
   if (type() != kString) return false;
@@ -1008,7 +1001,7 @@ Handle<Object> Literal::BuildValue(LocalIsolate* isolate) const {
 template EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
     Handle<Object> Literal::BuildValue(Isolate* isolate) const;
 template EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
-    Handle<Object> Literal::BuildValue(OffThreadIsolate* isolate) const;
+    Handle<Object> Literal::BuildValue(LocalIsolate* isolate) const;
 
 bool Literal::ToBooleanIsTrue() const {
   switch (type()) {
@@ -1062,7 +1055,7 @@ Literal* AstNodeFactory::NewNumberLiteral(double number, int pos) {
   if (DoubleToSmiInteger(number, &int_value)) {
     return NewSmiLiteral(int_value, pos);
   }
-  return new (zone_) Literal(number, pos);
+  return zone_->New<Literal>(number, pos);
 }
 
 const char* CallRuntime::debug_name() {

@@ -1518,6 +1518,24 @@ TEST_(load_literal) {
   CLEANUP();
 }
 
+TEST(prfm_regoffset) {
+  SET_UP_ASM();
+
+  COMPARE(prfm(PLIL1KEEP, MemOperand(x1, x2)), "prfm plil1keep, [x1, x2]");
+  COMPARE(prfm(PLIL1STRM, MemOperand(x3, w4, SXTW)),
+          "prfm plil1strm, [x3, w4, sxtw]");
+  COMPARE(prfm(PLIL2KEEP, MemOperand(x5, x6, LSL, 3)),
+          "prfm plil2keep, [x5, x6, lsl #3]");
+
+  COMPARE(prfm(PLIL2STRM, MemOperand(sp, xzr)), "prfm plil2strm, [sp, xzr]");
+  COMPARE(prfm(PLIL3KEEP, MemOperand(sp, wzr, SXTW)),
+          "prfm plil3keep, [sp, wzr, sxtw]");
+  COMPARE(prfm(PLIL3STRM, MemOperand(sp, xzr, LSL, 3)),
+          "prfm plil3strm, [sp, xzr, lsl #3]");
+
+  CLEANUP();
+}
+
 TEST_(cond_select) {
   SET_UP_ASM();
 
@@ -1802,6 +1820,7 @@ TEST_(fcvt_scvtf_ucvtf) {
   COMPARE(fcvtzs(x4, s3, 15), "fcvtzs x4, s3, #15");
   COMPARE(fcvtzs(w6, d5, 32), "fcvtzs w6, d5, #32");
   COMPARE(fcvtzs(w6, s5, 32), "fcvtzs w6, s5, #32");
+  COMPARE(fjcvtzs(w0, d1), "fjcvtzs w0, d1");
   COMPARE(fcvtzu(w2, d1, 1), "fcvtzu w2, d1, #1");
   COMPARE(fcvtzu(w2, s1, 1), "fcvtzu w2, s1, #1");
   COMPARE(fcvtzu(x4, d3, 15), "fcvtzu x4, d3, #15");
@@ -1918,10 +1937,10 @@ TEST_(bti) {
 TEST(system_pauth) {
   SET_UP_ASM();
 
-  COMPARE(pacia1716(), "pacia1716");
-  COMPARE(paciasp(), "paciasp");
-  COMPARE(autia1716(), "autia1716");
-  COMPARE(autiasp(), "autiasp");
+  COMPARE(pacib1716(), "pacib1716");
+  COMPARE(pacibsp(), "pacibsp");
+  COMPARE(autib1716(), "autib1716");
+  COMPARE(autibsp(), "autibsp");
 
   CLEANUP();
 }

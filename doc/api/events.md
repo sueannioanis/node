@@ -158,11 +158,13 @@ myEmitter.emit('error', new Error('whoops!'));
 ```
 
 It is possible to monitor `'error'` events without consuming the emitted error
-by installing a listener using the symbol `errorMonitor`.
+by installing a listener using the symbol `events.errorMonitor`.
 
 ```js
-const myEmitter = new MyEmitter();
-myEmitter.on(EventEmitter.errorMonitor, (err) => {
+const { EventEmitter, errorMonitor } = require('events');
+
+const myEmitter = new EventEmitter();
+myEmitter.on(errorMonitor, (err) => {
   MyMonitoringTool.log(err);
 });
 myEmitter.emit('error', new Error('whoops!'));
@@ -205,12 +207,13 @@ ee2.on('something', async (value) => {
 ee2[Symbol.for('nodejs.rejection')] = console.log;
 ```
 
-Setting `EventEmitter.captureRejections = true` will change the default for all
+Setting `events.captureRejections = true` will change the default for all
 new instances of `EventEmitter`.
 
 ```js
-EventEmitter.captureRejections = true;
-const ee1 = new EventEmitter();
+const events = require('events');
+events.captureRejections = true;
+const ee1 = new events.EventEmitter();
 ee1.on('something', async (value) => {
   throw new Error('kaboom');
 });
@@ -268,6 +271,8 @@ but important side effect: any *additional* listeners registered to the same
 listener that is in the process of being added.
 
 ```js
+class MyEmitter extends EventEmitter {}
+
 const myEmitter = new MyEmitter();
 // Only do this once so we don't loop forever
 myEmitter.once('newListener', (event, listener) => {
@@ -291,7 +296,9 @@ myEmitter.emit('event');
 <!-- YAML
 added: v0.9.3
 changes:
-  - version: v6.1.0, v4.7.0
+  - version:
+    - v6.1.0
+    - v4.7.0
     pr-url: https://github.com/nodejs/node/pull/6394
     description: For listeners attached using `.once()`, the `listener` argument
                  now yields the original listener function.
@@ -301,83 +308,6 @@ changes:
 * `listener` {Function} The event handler function
 
 The `'removeListener'` event is emitted *after* the `listener` is removed.
-
-### `EventEmitter.listenerCount(emitter, eventName)`
-<!-- YAML
-added: v0.9.12
-deprecated: v3.2.0
--->
-
-> Stability: 0 - Deprecated: Use [`emitter.listenerCount()`][] instead.
-
-* `emitter` {EventEmitter} The emitter to query
-* `eventName` {string|symbol} The event name
-
-A class method that returns the number of listeners for the given `eventName`
-registered on the given `emitter`.
-
-```js
-const myEmitter = new MyEmitter();
-myEmitter.on('event', () => {});
-myEmitter.on('event', () => {});
-console.log(EventEmitter.listenerCount(myEmitter, 'event'));
-// Prints: 2
-```
-
-### `EventEmitter.defaultMaxListeners`
-<!-- YAML
-added: v0.11.2
--->
-
-By default, a maximum of `10` listeners can be registered for any single
-event. This limit can be changed for individual `EventEmitter` instances
-using the [`emitter.setMaxListeners(n)`][] method. To change the default
-for *all* `EventEmitter` instances, the `EventEmitter.defaultMaxListeners`
-property can be used. If this value is not a positive number, a `RangeError`
-is thrown.
-
-Take caution when setting the `EventEmitter.defaultMaxListeners` because the
-change affects *all* `EventEmitter` instances, including those created before
-the change is made. However, calling [`emitter.setMaxListeners(n)`][] still has
-precedence over `EventEmitter.defaultMaxListeners`.
-
-This is not a hard limit. The `EventEmitter` instance will allow
-more listeners to be added but will output a trace warning to stderr indicating
-that a "possible EventEmitter memory leak" has been detected. For any single
-`EventEmitter`, the `emitter.getMaxListeners()` and `emitter.setMaxListeners()`
-methods can be used to temporarily avoid this warning:
-
-```js
-emitter.setMaxListeners(emitter.getMaxListeners() + 1);
-emitter.once('event', () => {
-  // do stuff
-  emitter.setMaxListeners(Math.max(emitter.getMaxListeners() - 1, 0));
-});
-```
-
-The [`--trace-warnings`][] command-line flag can be used to display the
-stack trace for such warnings.
-
-The emitted warning can be inspected with [`process.on('warning')`][] and will
-have the additional `emitter`, `type` and `count` properties, referring to
-the event emitter instance, the event’s name and the number of attached
-listeners, respectively.
-Its `name` property is set to `'MaxListenersExceededWarning'`.
-
-### `EventEmitter.errorMonitor`
-<!-- YAML
-added:
- - v13.6.0
- - v12.17.0
--->
-
-This symbol shall be used to install a listener for only monitoring `'error'`
-events. Listeners installed using this symbol are called before the regular
-`'error'` listeners are called.
-
-Installing a listener using this symbol does not change the behavior once an
-`'error'` event is emitted, therefore the process will still crash if no
-regular `'error'` listener is installed.
 
 ### `emitter.addListener(eventName, listener)`
 <!-- YAML
@@ -469,7 +399,7 @@ added: v1.0.0
 
 Returns the current max listener value for the `EventEmitter` which is either
 set by [`emitter.setMaxListeners(n)`][] or defaults to
-[`EventEmitter.defaultMaxListeners`][].
+[`events.defaultMaxListeners`][].
 
 ### `emitter.listenerCount(eventName)`
 <!-- YAML
@@ -825,6 +755,95 @@ class MyClass extends EventEmitter {
 }
 ```
 
+## `events.defaultMaxListeners`
+<!-- YAML
+added: v0.11.2
+-->
+
+By default, a maximum of `10` listeners can be registered for any single
+event. This limit can be changed for individual `EventEmitter` instances
+using the [`emitter.setMaxListeners(n)`][] method. To change the default
+for *all* `EventEmitter` instances, the `events.defaultMaxListeners`
+property can be used. If this value is not a positive number, a `RangeError`
+is thrown.
+
+Take caution when setting the `events.defaultMaxListeners` because the
+change affects *all* `EventEmitter` instances, including those created before
+the change is made. However, calling [`emitter.setMaxListeners(n)`][] still has
+precedence over `events.defaultMaxListeners`.
+
+This is not a hard limit. The `EventEmitter` instance will allow
+more listeners to be added but will output a trace warning to stderr indicating
+that a "possible EventEmitter memory leak" has been detected. For any single
+`EventEmitter`, the `emitter.getMaxListeners()` and `emitter.setMaxListeners()`
+methods can be used to temporarily avoid this warning:
+
+```js
+emitter.setMaxListeners(emitter.getMaxListeners() + 1);
+emitter.once('event', () => {
+  // do stuff
+  emitter.setMaxListeners(Math.max(emitter.getMaxListeners() - 1, 0));
+});
+```
+
+The [`--trace-warnings`][] command-line flag can be used to display the
+stack trace for such warnings.
+
+The emitted warning can be inspected with [`process.on('warning')`][] and will
+have the additional `emitter`, `type` and `count` properties, referring to
+the event emitter instance, the event’s name and the number of attached
+listeners, respectively.
+Its `name` property is set to `'MaxListenersExceededWarning'`.
+
+## `events.errorMonitor`
+<!-- YAML
+added:
+ - v13.6.0
+ - v12.17.0
+-->
+
+This symbol shall be used to install a listener for only monitoring `'error'`
+events. Listeners installed using this symbol are called before the regular
+`'error'` listeners are called.
+
+Installing a listener using this symbol does not change the behavior once an
+`'error'` event is emitted, therefore the process will still crash if no
+regular `'error'` listener is installed.
+
+## `events.getEventListeners(emitterOrTarget, eventName)`
+<!-- YAML
+added:
+ - v15.2.0
+-->
+* `emitterOrTarget` {EventEmitter|EventTarget}
+* `eventName` {string|symbol}
+* Returns: {Function[]}
+
+Returns a copy of the array of listeners for the event named `eventName`.
+
+For `EventEmitter`s this behaves exactly the same as calling `.listeners` on
+the emitter.
+
+For `EventTarget`s this is the only way to get the event listeners for the
+event target. This is useful for debugging and diagnostic purposes.
+
+```js
+const { getEventListeners, EventEmitter } = require('events');
+
+{
+  const ee = new EventEmitter();
+  const listener = () => console.log('Events are fun');
+  ee.on('foo', listener);
+  getEventListeners(ee, 'foo'); // [listener]
+}
+{
+  const et = new EventTarget();
+  const listener = () => console.log('Events are fun');
+  et.addEventListener('foo', listener);
+  getEventListeners(et, 'foo'); // [listener]
+}
+```
+
 ## `events.once(emitter, name[, options])`
 <!-- YAML
 added:
@@ -1000,6 +1019,29 @@ Value: `Symbol.for('nodejs.rejection')`
 
 See how to write a custom [rejection handler][rejection].
 
+## `events.listenerCount(emitter, eventName)`
+<!-- YAML
+added: v0.9.12
+deprecated: v3.2.0
+-->
+
+> Stability: 0 - Deprecated: Use [`emitter.listenerCount()`][] instead.
+
+* `emitter` {EventEmitter} The emitter to query
+* `eventName` {string|symbol} The event name
+
+A class method that returns the number of listeners for the given `eventName`
+registered on the given `emitter`.
+
+```js
+const { EventEmitter, listenerCount } = require('events');
+const myEmitter = new EventEmitter();
+myEmitter.on('event', () => {});
+myEmitter.on('event', () => {});
+console.log(listenerCount(myEmitter, 'event'));
+// Prints: 2
+```
+
 ## `events.on(emitter, eventName[, options])`
 <!-- YAML
 added:
@@ -1067,20 +1109,51 @@ const ac = new AbortController();
 process.nextTick(() => ac.abort());
 ```
 
+## `events.setMaxListeners(n[, ...eventTargets])`
+<!-- YAML
+added: v15.4.0
+-->
+
+* `n` {number} A non-negative number. The maximum number of listeners per
+  `EventTarget` event.
+* `...eventsTargets` {EventTarget[]|EventEmitter[]} Zero or more {EventTarget}
+  or {EventEmitter} instances. If none are specified, `n` is set as the default
+  max for all newly created {EventTarget} and {EventEmitter} objects.
+
+```js
+const {
+  setMaxListeners,
+  EventEmitter
+} = require('events');
+
+const target = new EventTarget();
+const emitter = new EventEmitter();
+
+setMaxListeners(5, target, emitter);
+```
+
+<a id="event-target-and-event-api"></a>
 ## `EventTarget` and `Event` API
 <!-- YAML
 added: v14.5.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/37237
+    description: changed EventTarget error handling.
+  - version: v15.4.0
+    pr-url: https://github.com/nodejs/node/pull/35949
+    description: No longer experimental.
+  - version: v15.0.0
+    pr-url: https://github.com/nodejs/node/pull/35496
+    description:
+      The `EventTarget` and `Event` classes are now available as globals.
 -->
-
-> Stability: 1 - Experimental
 
 The `EventTarget` and `Event` objects are a Node.js-specific implementation
 of the [`EventTarget` Web API][] that are exposed by some Node.js core APIs.
-Neither the `EventTarget` nor `Event` classes are available for end
-user code to create.
 
 ```js
-const target = getEventTargetSomehow();
+const target = new EventTarget();
 
 target.addEventListener('foo', (event) => {
   console.log('foo event happened!');
@@ -1166,7 +1239,7 @@ const handler4 = {
   }
 };
 
-const target = getEventTargetSomehow();
+const target = new EventTarget();
 
 target.addEventListener('foo', handler1);
 target.addEventListener('foo', handler2);
@@ -1177,16 +1250,29 @@ target.addEventListener('foo', handler4, { once: true });
 ### `EventTarget` error handling
 
 When a registered event listener throws (or returns a Promise that rejects),
-by default the error is forwarded to the `process.on('error')` event
-on `process.nextTick()`. Throwing within an event listener will *not* stop
-the other registered handlers from being invoked.
+by default the error is treated as an uncaught exception on
+`process.nextTick()`. This means uncaught exceptions in `EventTarget`s will
+terminate the Node.js process by default.
 
-The `EventTarget` does not implement any special default handling for
-`'error'` type events.
+Throwing within an event listener will *not* stop the other registered handlers
+from being invoked.
+
+The `EventTarget` does not implement any special default handling for `'error'`
+type events like `EventEmitter`.
+
+Currently errors are first forwarded to the `process.on('error')` event
+before reaching `process.on('uncaughtException')`. This behavior is
+deprecated and will change in a future release to align `EventTarget` with
+other Node.js APIs. Any code relying on the `process.on('error')` event should
+be aligned with the new behavior.
 
 ### Class: `Event`
 <!-- YAML
 added: v14.5.0
+changes:
+  - version: v15.0.0
+    pr-url: https://github.com/nodejs/node/pull/35496
+    description: The `Event` class is now available through the global object.
 -->
 
 The `Event` object is an adaptation of the [`Event` Web API][]. Instances
@@ -1268,9 +1354,10 @@ This is not used in Node.js and is provided purely for completeness.
 added: v14.5.0
 -->
 
-* Type: {boolean} Always returns `false`.
+* Type: {boolean}
 
-This is not used in Node.js and is provided purely for completeness.
+The {AbortSignal} `"abort"` event is emitted with `isTrusted` set to `true`. The
+value is `false` in all other cases.
 
 #### `event.preventDefault()`
 <!-- YAML
@@ -1339,6 +1426,11 @@ The event type identifier.
 ### Class: `EventTarget`
 <!-- YAML
 added: v14.5.0
+changes:
+  - version: v15.0.0
+    pr-url: https://github.com/nodejs/node/pull/35496
+    description:
+      The `EventTarget` class is now available through the global object.
 -->
 
 #### `eventTarget.addEventListener(type, listener[, options])`
@@ -1372,7 +1464,7 @@ a `listener`. Any individual `listener` may be added once with
 ```js
 function handler(event) {}
 
-const target = getEventTargetSomehow();
+const target = new EventTarget();
 target.addEventListener('foo', handler, { capture: true });  // first
 target.addEventListener('foo', handler, { capture: false }); // second
 
@@ -1468,7 +1560,7 @@ added: v14.5.0
 
 * Returns: {EventTarget} this
 
-Node.js-speciic alias for `eventTarget.removeListener()`.
+Node.js-specific alias for `eventTarget.removeListener()`.
 
 #### `nodeEventTarget.on(type, listener[, options])`
 <!-- YAML
@@ -1506,6 +1598,8 @@ added: v14.5.0
 
 * `type` {string}
 
+* Returns: {EventTarget} this
+
 Node.js-specific extension to the `EventTarget` class. If `type` is specified,
 removes all registered listeners for `type`, otherwise removes all registered
 listeners.
@@ -1526,19 +1620,19 @@ and `removeEventListener()` is that `removeListener()` will return a reference
 to the `EventTarget`.
 
 [WHATWG-EventTarget]: https://dom.spec.whatwg.org/#interface-eventtarget
-[`--trace-warnings`]: cli.html#cli_trace_warnings
-[`EventEmitter.defaultMaxListeners`]: #events_eventemitter_defaultmaxlisteners
-[`domain`]: domain.html
+[`--trace-warnings`]: cli.md#cli_trace_warnings
+[`EventTarget` Web API]: https://dom.spec.whatwg.org/#eventtarget
+[`EventTarget` error handling]: #events_eventtarget_error_handling
+[`Event` Web API]: https://dom.spec.whatwg.org/#event
+[`domain`]: domain.md
 [`emitter.listenerCount()`]: #events_emitter_listenercount_eventname
 [`emitter.removeListener()`]: #events_emitter_removelistener_eventname_listener
 [`emitter.setMaxListeners(n)`]: #events_emitter_setmaxlisteners_n
-[`Event` Web API]: https://dom.spec.whatwg.org/#event
-[`EventTarget` error handling]: #events_eventtarget_error_handling
-[`EventTarget` Web API]: https://dom.spec.whatwg.org/#eventtarget
-[`fs.ReadStream`]: fs.html#fs_class_fs_readstream
-[`net.Server`]: net.html#net_class_net_server
-[`process.on('warning')`]: process.html#process_event_warning
-[stream]: stream.html
+[`events.defaultMaxListeners`]: #events_events_defaultmaxlisteners
+[`fs.ReadStream`]: fs.md#fs_class_fs_readstream
+[`net.Server`]: net.md#net_class_net_server
+[`process.on('warning')`]: process.md#process_event_warning
+[stream]: stream.md
 [capturerejections]: #events_capture_rejections_of_promises
 [rejection]: #events_emitter_symbol_for_nodejs_rejection_err_eventname_args
 [rejectionsymbol]: #events_events_capturerejectionsymbol

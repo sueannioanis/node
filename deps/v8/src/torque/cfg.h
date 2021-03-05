@@ -63,7 +63,7 @@ class Block {
 
     DCHECK_EQ(input_definitions_->Size(), input_definitions.Size());
     bool changed = false;
-    for (BottomOffset i = 0; i < input_definitions.AboveTop(); ++i) {
+    for (BottomOffset i = {0}; i < input_definitions.AboveTop(); ++i) {
       auto& current = input_definitions_->Peek(i);
       auto& input = input_definitions.Peek(i);
       if (current == input) continue;
@@ -212,7 +212,7 @@ class CfgAssembler {
   Block* current_block_ = cfg_.start();
 };
 
-class CfgAssemblerScopedTemporaryBlock {
+class V8_NODISCARD CfgAssemblerScopedTemporaryBlock {
  public:
   CfgAssemblerScopedTemporaryBlock(CfgAssembler* assembler, Block* block)
       : assembler_(assembler), saved_block_(block) {

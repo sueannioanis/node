@@ -38,8 +38,7 @@ const { O_APPEND = 0,
         O_SYNC = 0,
         O_DSYNC = 0,
         O_TRUNC = 0,
-        O_WRONLY = 0
-} = fs.constants;
+        O_WRONLY = 0 } = fs.constants;
 
 const { stringToFlags } = require('internal/fs/utils');
 
@@ -89,8 +88,7 @@ if (common.isLinux || common.isOSX) {
   tmpdir.refresh();
   const file = path.join(tmpdir.path, 'a.js');
   fs.copyFileSync(fixtures.path('a.js'), file);
-  fs.open(file, O_DSYNC, common.mustCall((err, fd) => {
-    assert.ifError(err);
+  fs.open(file, O_DSYNC, common.mustSucceed((fd) => {
     fs.closeSync(fd);
   }));
 }

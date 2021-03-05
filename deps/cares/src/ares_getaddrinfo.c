@@ -386,6 +386,9 @@ static int fake_addrinfo(const char *name,
         }
     }
 
+  node->ai_socktype = hints->ai_socktype;
+  node->ai_protocol = hints->ai_protocol;
+
   callback(arg, ARES_SUCCESS, 0, ai);
   return 1;
 }
@@ -406,13 +409,15 @@ static void end_hquery(struct host_query *hquery, int status)
       /* Set port into each address (resolved separately). */
       while (next)
         {
+          next->ai_socktype = hquery->hints.ai_socktype;
+          next->ai_protocol = hquery->hints.ai_protocol;
           if (next->ai_family == AF_INET)
             {
-              ((struct sockaddr_in *)next->ai_addr)->sin_port = htons(hquery->port);
+              (CARES_INADDR_CAST(struct sockaddr_in *, next->ai_addr))->sin_port = htons(hquery->port);
             }
           else
             {
-              ((struct sockaddr_in6 *)next->ai_addr)->sin6_port = htons(hquery->port);
+              (CARES_INADDR_CAST(struct sockaddr_in6 *, next->ai_addr))->sin6_port = htons(hquery->port);
             }
           next = next->ai_next;
         }
@@ -456,18 +461,18 @@ static int file_lookup(struct host_query *hquery)
           char tmp[MAX_PATH];
           HKEY hkeyHosts;
 
-          if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, WIN_NS_NT_KEY, 0, KEY_READ,
+          if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, WIN_NS_NT_KEY, 0, KEY_READ,
                            &hkeyHosts) == ERROR_SUCCESS)
             {
               DWORD dwLength = MAX_PATH;
-              RegQueryValueEx(hkeyHosts, DATABASEPATH, NULL, NULL, (LPBYTE)tmp,
+              RegQueryValueExA(hkeyHosts, DATABASEPATH, NULL, NULL, (LPBYTE)tmp,
                               &dwLength);
-              ExpandEnvironmentStrings(tmp, PATH_HOSTS, MAX_PATH);
+              ExpandEnvironmentStringsA(tmp, PATH_HOSTS, MAX_PATH);
               RegCloseKey(hkeyHosts);
             }
         }
       else if (platform == WIN_9X)
-        GetWindowsDirectory(PATH_HOSTS, MAX_PATH);
+        GetWindowsDirectoryA(PATH_HOSTS, MAX_PATH);
       else
         return ARES_ENOTFOUND;
 
@@ -548,6 +553,7 @@ static void host_callback(void *arg, int status, int timeouts,
   else if (status == ARES_EDESTRUCTION)
     {
       end_hquery(hquery, status);
+      return;
     }
 
   if (!hquery->remaining)
@@ -753,12 +759,18 @@ static int as_is_first(const struct host_query* hquery)
 {
   char* p;
   int ndots = 0;
+  size_t nname = strlen(hquery->name);
   for (p = hquery->name; *p; p++)
     {
       if (*p == '.')
         {
           ndots++;
         }
+    }
+  if (nname && hquery->name[nname-1] == '.')
+    {
+      /* prevent ARES_EBADNAME for valid FQDN, where ndots < channel->ndots  */
+      return 1;
     }
   return ndots >= hquery->channel->ndots;
 }

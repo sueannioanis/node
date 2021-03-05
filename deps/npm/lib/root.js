@@ -1,15 +1,7 @@
-module.exports = root
-
 const npm = require('./npm.js')
 const output = require('./utils/output.js')
-
-root.usage = 'npm root [-g]'
-
-function root (args, silent, cb) {
-  if (typeof cb !== 'function') {
-    cb = silent
-    silent = false
-  }
-  if (!silent) output(npm.dir)
-  process.nextTick(cb.bind(this, null, npm.dir))
-}
+const usageUtil = require('./utils/usage.js')
+const cmd = (args, cb) => root(args).then(() => cb()).catch(cb)
+const usage = usageUtil('root', 'npm root [-g]')
+const root = async (args, cb) => output(npm.dir)
+module.exports = Object.assign(cmd, { usage })

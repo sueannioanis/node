@@ -10,8 +10,10 @@
 #include "src/objects/elements-kind.h"
 #include "src/objects/feedback-vector.h"
 #include "src/objects/instance-type.h"
+#include "src/utils/boxed-float.h"
 
 namespace v8 {
+
 class CFunctionInfo;
 
 namespace internal {
@@ -31,6 +33,7 @@ class NativeContext;
 class ScriptContextTable;
 
 namespace compiler {
+
 // Whether we are loading a property or storing to a property.
 // For a store during literal creation, do not walk up the prototype chain.
 enum class AccessMode { kLoad, kStore, kStoreInLiteral, kHas };
@@ -48,56 +51,68 @@ enum class OddballType : uint8_t {
 };
 
 // This list is sorted such that subtypes appear before their supertypes.
+// This list must not contain a type if it doesn't contain all of its subtypes
+// too. For example, it CANNOT contain FixedArrayBase if it doesn't contain
+// FixedDoubleArray, BytecodeArray and FixedArray.
+// DO NOT VIOLATE THESE TWO PROPERTIES!
+// Classes on this list will skip serialization when
+// FLAG_turbo_direct_heap_access is on. Otherwise, they might get serialized.
+#define HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(V) \
+  /* Subtypes of FixedArray */                      \
+  V(ObjectBoilerplateDescription)                   \
+  V(ScopeInfo)                                      \
+  /* Subtypes of String */                          \
+  V(InternalizedString)                             \
+  /* Subtypes of Name */                            \
+  V(String)                                         \
+  V(Symbol)                                         \
+  /* Subtypes of HeapObject */                      \
+  V(AccessorInfo)                                   \
+  V(ArrayBoilerplateDescription)                    \
+  V(CallHandlerInfo)                                \
+  V(Cell)                                           \
+  V(Name)                                           \
+  V(TemplateObjectDescription)
+
+// This list is sorted such that subtypes appear before their supertypes.
 // DO NOT VIOLATE THIS PROPERTY!
-#define HEAP_BROKER_OBJECT_LIST(V) \
-  /* Subtypes of JSObject */       \
-  V(JSArray)                       \
-  V(JSBoundFunction)               \
-  V(JSDataView)                    \
-  V(JSFunction)                    \
-  V(JSGlobalObject)                \
-  V(JSGlobalProxy)                 \
-  V(JSRegExp)                      \
-  V(JSTypedArray)                  \
-  /* Subtypes of Context */        \
-  V(NativeContext)                 \
-  /* Subtypes of FixedArray */     \
-  V(Context)                       \
-  V(ScopeInfo)                     \
-  V(ScriptContextTable)            \
-  /* Subtypes of FixedArrayBase */ \
-  V(BytecodeArray)                 \
-  V(FixedArray)                    \
-  V(FixedDoubleArray)              \
-  /* Subtypes of Name */           \
-  V(InternalizedString)            \
-  V(String)                        \
-  V(Symbol)                        \
-  /* Subtypes of JSReceiver */     \
-  V(JSObject)                      \
-  /* Subtypes of HeapObject */     \
-  V(AccessorInfo)                  \
-  V(AllocationSite)                \
-  V(ArrayBoilerplateDescription)   \
-  V(BigInt)                        \
-  V(CallHandlerInfo)               \
-  V(Cell)                          \
-  V(Code)                          \
-  V(DescriptorArray)               \
-  V(FeedbackCell)                  \
-  V(FeedbackVector)                \
-  V(FixedArrayBase)                \
-  V(FunctionTemplateInfo)          \
-  V(HeapNumber)                    \
-  V(JSReceiver)                    \
-  V(Map)                           \
-  V(Name)                          \
-  V(ObjectBoilerplateDescription)  \
-  V(PropertyCell)                  \
-  V(SharedFunctionInfo)            \
-  V(SourceTextModule)              \
-  V(TemplateObjectDescription)     \
-  /* Subtypes of Object */         \
+#define HEAP_BROKER_SERIALIZED_OBJECT_LIST(V) \
+  /* Subtypes of JSObject */                  \
+  V(JSArray)                                  \
+  V(JSBoundFunction)                          \
+  V(JSDataView)                               \
+  V(JSFunction)                               \
+  V(JSGlobalObject)                           \
+  V(JSGlobalProxy)                            \
+  V(JSRegExp)                                 \
+  V(JSTypedArray)                             \
+  /* Subtypes of Context */                   \
+  V(NativeContext)                            \
+  /* Subtypes of FixedArray */                \
+  V(Context)                                  \
+  V(ScriptContextTable)                       \
+  /* Subtypes of FixedArrayBase */            \
+  V(BytecodeArray)                            \
+  V(FixedArray)                               \
+  V(FixedDoubleArray)                         \
+  /* Subtypes of JSReceiver */                \
+  V(JSObject)                                 \
+  /* Subtypes of HeapObject */                \
+  V(AllocationSite)                           \
+  V(BigInt)                                   \
+  V(Code)                                     \
+  V(DescriptorArray)                          \
+  V(FeedbackCell)                             \
+  V(FeedbackVector)                           \
+  V(FixedArrayBase)                           \
+  V(FunctionTemplateInfo)                     \
+  V(HeapNumber)                               \
+  V(JSReceiver)                               \
+  V(Map)                                      \
+  V(PropertyCell)                             \
+  V(SharedFunctionInfo)                       \
+  V(SourceTextModule)                         \
+  /* Subtypes of Object */                    \
   V(HeapObject)
 
 class CompilationDependencies;
@@ -107,7 +122,8 @@ class ObjectData;
 class PerIsolateCompilerCache;
 class PropertyAccessInfo;
 #define FORWARD_DECL(Name) class Name##Ref;
-HEAP_BROKER_OBJECT_LIST(FORWARD_DECL)
+HEAP_BROKER_SERIALIZED_OBJECT_LIST(FORWARD_DECL)
+HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(FORWARD_DECL)
 #undef FORWARD_DECL
 
 class V8_EXPORT_PRIVATE ObjectRef {
@@ -122,19 +138,23 @@ class V8_EXPORT_PRIVATE ObjectRef {
   Handle<Object> object() const;
 
   bool equals(const ObjectRef& other) const;
+  bool ShouldHaveBeenSerialized() const;
 
   bool IsSmi() const;
   int AsSmi() const;
 
 #define HEAP_IS_METHOD_DECL(Name) bool Is##Name() const;
-  HEAP_BROKER_OBJECT_LIST(HEAP_IS_METHOD_DECL)
+  HEAP_BROKER_SERIALIZED_OBJECT_LIST(HEAP_IS_METHOD_DECL)
+  HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(HEAP_IS_METHOD_DECL)
 #undef HEAP_IS_METHOD_DECL
 
 #define HEAP_AS_METHOD_DECL(Name) Name##Ref As##Name() const;
-  HEAP_BROKER_OBJECT_LIST(HEAP_AS_METHOD_DECL)
+  HEAP_BROKER_SERIALIZED_OBJECT_LIST(HEAP_AS_METHOD_DECL)
+  HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(HEAP_AS_METHOD_DECL)
 #undef HEAP_AS_METHOD_DECL
 
   bool IsNullOrUndefined() const;
+  bool IsTheHole() const;
 
   bool BooleanValue() const;
   Maybe<double> OddballToNumber() const;
@@ -157,6 +177,10 @@ class V8_EXPORT_PRIVATE ObjectRef {
       return lhs.equals(rhs);
     }
   };
+
+#ifdef DEBUG
+  bool IsNeverSerializedHeapObject() const;
+#endif  // DEBUG
 
  protected:
   JSHeapBroker* broker() const;
@@ -292,7 +316,6 @@ class JSDataViewRef : public JSObjectRef {
   Handle<JSDataView> object() const;
 
   size_t byte_length() const;
-  size_t byte_offset() const;
 };
 
 class JSBoundFunctionRef : public JSObjectRef {
@@ -301,7 +324,7 @@ class JSBoundFunctionRef : public JSObjectRef {
 
   Handle<JSBoundFunction> object() const;
 
-  void Serialize();
+  bool Serialize();
   bool serialized() const;
 
   // The following are available only after calling Serialize().
@@ -319,7 +342,7 @@ class V8_EXPORT_PRIVATE JSFunctionRef : public JSObjectRef {
   bool has_feedback_vector() const;
   bool has_initial_map() const;
   bool has_prototype() const;
-  bool IsOptimized() const;
+  bool HasAttachedOptimizedCode() const;
   bool PrototypeRequiresRuntimeLookup() const;
 
   void Serialize();
@@ -332,6 +355,7 @@ class V8_EXPORT_PRIVATE JSFunctionRef : public JSObjectRef {
   NativeContextRef native_context() const;
   SharedFunctionInfoRef shared() const;
   FeedbackVectorRef feedback_vector() const;
+  FeedbackCellRef raw_feedback_cell() const;
   CodeRef code() const;
   int InitialMapInstanceSizeWithMinSlack() const;
 };
@@ -378,6 +402,8 @@ class ContextRef : public HeapObjectRef {
   base::Optional<ObjectRef> get(
       int index, SerializationPolicy policy =
                      SerializationPolicy::kAssumeSerialized) const;
+
+  SourceTextModuleRef GetModule(SerializationPolicy policy) const;
 
   // We only serialize the ScopeInfo if certain Promise
   // builtins are called.
@@ -571,7 +597,6 @@ class V8_EXPORT_PRIVATE MapRef : public HeapObjectRef {
   int UnusedPropertyFields() const;
   ElementsKind elements_kind() const;
   bool is_stable() const;
-  bool is_extensible() const;
   bool is_constructor() const;
   bool has_prototype_slot() const;
   bool is_access_check_needed() const;
@@ -610,7 +635,6 @@ class V8_EXPORT_PRIVATE MapRef : public HeapObjectRef {
       ZoneVector<MapRef>* prototype_maps);
 
   // Concerning the underlying instance_descriptors:
-  void SerializeOwnDescriptors();
   void SerializeOwnDescriptor(InternalIndex descriptor_index);
   bool serialized_own_descriptor(InternalIndex descriptor_index) const;
   MapRef FindFieldOwner(InternalIndex descriptor_index) const;
@@ -701,8 +725,7 @@ class FixedDoubleArrayRef : public FixedArrayBaseRef {
 
   Handle<FixedDoubleArray> object() const;
 
-  double get_scalar(int i) const;
-  bool is_the_hole(int i) const;
+  Float64 get(int i) const;
 };
 
 class BytecodeArrayRef : public FixedArrayBaseRef {
@@ -719,9 +742,7 @@ class BytecodeArrayRef : public FixedArrayBaseRef {
   uint8_t get(int index) const;
   Address GetFirstBytecodeAddress() const;
 
-  // Source position table.
-  const byte* source_positions_address() const;
-  int source_positions_size() const;
+  Handle<ByteArray> SourcePositionTable() const;
 
   // Constant pool access.
   Handle<Object> GetConstantAtIndex(int index) const;
@@ -758,8 +779,7 @@ class ScopeInfoRef : public HeapObjectRef {
 
   int ContextLength() const;
   bool HasOuterScopeInfo() const;
-  int Flags() const;
-  bool HasContextExtension() const;
+  bool HasContextExtensionSlot() const;
 
   // Only serialized via SerializeScopeInfoChain.
   ScopeInfoRef OuterScopeInfo() const;
@@ -777,8 +797,6 @@ class ScopeInfoRef : public HeapObjectRef {
   V(bool, HasBuiltinId)                                  \
   V(bool, construct_as_builtin)                          \
   V(bool, HasBytecodeArray)                              \
-  V(bool, is_safe_to_skip_arguments_adaptor)             \
-  V(SharedFunctionInfo::Inlineability, GetInlineability) \
   V(int, StartPosition)                                  \
   V(bool, is_compiled)                                   \
   V(bool, IsUserJavaScript)
@@ -792,6 +810,7 @@ class V8_EXPORT_PRIVATE SharedFunctionInfoRef : public HeapObjectRef {
   int builtin_id() const;
   int context_header_size() const;
   BytecodeArrayRef GetBytecodeArray() const;
+  SharedFunctionInfo::Inlineability GetInlineability() const;
 
 #define DECL_ACCESSOR(type, name) type name() const;
   BROKER_SFI_FIELDS(DECL_ACCESSOR)
@@ -800,13 +819,6 @@ class V8_EXPORT_PRIVATE SharedFunctionInfoRef : public HeapObjectRef {
   bool IsInlineable() const {
     return GetInlineability() == SharedFunctionInfo::kIsInlineable;
   }
-
-  // Template objects may not be created at compilation time. This method
-  // wraps the retrieval of the template object and creates it if
-  // necessary.
-  JSArrayRef GetTemplateObject(
-      TemplateObjectDescriptionRef description, FeedbackSource const& source,
-      SerializationPolicy policy = SerializationPolicy::kAssumeSerialized);
 
   void SerializeFunctionTemplateInfo();
   base::Optional<FunctionTemplateInfoRef> function_template_info() const;
@@ -821,8 +833,8 @@ class StringRef : public NameRef {
 
   Handle<String> object() const;
 
-  int length() const;
-  uint16_t GetFirstChar();
+  base::Optional<int> length() const;
+  base::Optional<uint16_t> GetFirstChar();
   base::Optional<double> ToNumber();
   bool IsSeqString() const;
   bool IsExternalString() const;
@@ -860,6 +872,7 @@ class SourceTextModuleRef : public HeapObjectRef {
   void Serialize();
 
   base::Optional<CellRef> GetCell(int cell_index) const;
+  ObjectRef import_meta() const;
 };
 
 class TemplateObjectDescriptionRef : public HeapObjectRef {
@@ -874,8 +887,6 @@ class CellRef : public HeapObjectRef {
   DEFINE_REF_CONSTRUCTOR(Cell, HeapObjectRef)
 
   Handle<Cell> object() const;
-
-  ObjectRef value() const;
 };
 
 class JSGlobalObjectRef : public JSObjectRef {

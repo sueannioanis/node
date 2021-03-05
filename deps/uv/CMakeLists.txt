@@ -30,6 +30,13 @@ if(QEMU)
   add_definitions(-D__QEMU__=1)
 endif()
 
+option(ASAN "Enable AddressSanitizer (ASan)" OFF)
+if(ASAN AND CMAKE_C_COMPILER_ID MATCHES "AppleClang|GNU|Clang")
+  add_definitions(-D__ASAN__=1)
+  set (CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+endif()
+
 # Compiler check
 string(CONCAT is-msvc $<OR:
   $<C_COMPILER_ID:MSVC>,
@@ -95,6 +102,9 @@ list(APPEND uv_cflags ${lint-no-conditional-assignment-msvc})
 list(APPEND uv_cflags ${lint-no-unsafe-msvc})
 list(APPEND uv_cflags ${lint-utf8-msvc} )
 
+check_c_compiler_flag(-fno-strict-aliasing UV_F_STRICT_ALIASING)
+list(APPEND uv_cflags $<$<BOOL:${UV_F_STRICT_ALIASING}>:-fno-strict-aliasing>)
+
 set(uv_sources
     src/fs-poll.c
     src/idna.c
@@ -108,7 +118,7 @@ set(uv_sources
     src/version.c)
 
 if(WIN32)
-  list(APPEND uv_defines WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0600)
+  list(APPEND uv_defines WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0602)
   list(APPEND uv_libraries
        psapi
        user32
@@ -146,7 +156,7 @@ if(WIN32)
   list(APPEND uv_test_sources src/win/snprintf.c test/runner-win.c)
 else()
   list(APPEND uv_defines _FILE_OFFSET_BITS=64 _LARGEFILE_SOURCE)
-  if(NOT CMAKE_SYSTEM_NAME MATCHES "Android|OS390")
+  if(NOT CMAKE_SYSTEM_NAME MATCHES "Android|OS390|QNX")
     # TODO: This should be replaced with find_package(Threads) if possible
     # Android has pthread as part of its c library, not as a separate
     # libpthread.so.
@@ -298,6 +308,29 @@ if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
   list(APPEND uv_sources src/unix/no-proctitle.c src/unix/sunos.c)
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+  list(APPEND uv_defines _BSD_SOURCE)
+  list(APPEND uv_libraries bsd network)
+  list(APPEND uv_sources
+	  src/unix/haiku.c
+	  src/unix/bsd-ifaddrs.c
+	  src/unix/no-fsevents.c
+	  src/unix/no-proctitle.c
+	  src/unix/posix-hrtime.c
+	  src/unix/posix-poll.c)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  list(APPEND uv_sources
+    src/unix/posix-hrtime.c
+    src/unix/posix-poll.c
+    src/unix/qnx.c
+    src/unix/bsd-ifaddrs.c
+    src/unix/no-proctitle.c
+    src/unix/no-fsevents.c)
+  list(APPEND uv_libraries socket)
+endif()
+
 if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "DragonFly|FreeBSD|Linux|NetBSD|OpenBSD")
   list(APPEND uv_test_libraries util)
 endif()
@@ -442,6 +475,7 @@ if(LIBUV_BUILD_TESTS)
        test/test-poll-close-doesnt-corrupt-stack.c
        test/test-poll-close.c
        test/test-poll-closesocket.c
+       test/test-poll-multiple-handles.c
        test/test-poll-oob.c
        test/test-poll.c
        test/test-process-priority.c
@@ -568,10 +602,11 @@ if(UNIX OR MINGW)
   set(libdir ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
   set(prefix ${CMAKE_INSTALL_PREFIX})
   configure_file(libuv.pc.in libuv.pc @ONLY)
+  configure_file(libuv-static.pc.in libuv-static.pc @ONLY)
 
   install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
   install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
-  install(FILES ${PROJECT_BINARY_DIR}/libuv.pc
+  install(FILES ${PROJECT_BINARY_DIR}/libuv.pc ${PROJECT_BINARY_DIR}/libuv-static.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
   install(TARGETS uv LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(TARGETS uv_a ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

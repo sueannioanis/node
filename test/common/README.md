@@ -40,12 +40,12 @@ The `benchmark` module is used by tests to run benchmarks.
 The `common` module is used by tests for consistency across repeated
 tasks.
 
-### `allowGlobals(...whitelist)`
+### `allowGlobals(...allowlist)`
 
-* `whitelist` [&lt;Array>][] Array of Globals
+* `allowlist` [&lt;Array>][] Array of Globals
 * return [&lt;Array>][]
 
-Takes `whitelist` and concats that with predefined `knownGlobals`.
+Takes `allowlist` and concats that with predefined `knownGlobals`.
 
 ### `canCreateSymLink()`
 
@@ -314,6 +314,15 @@ If `fn` is not provided, an empty function will be used.
 Returns a function that triggers an `AssertionError` if it is invoked. `msg` is
 used as the error message for the `AssertionError`.
 
+### `mustSucceed([fn])`
+
+* `fn` [&lt;Function>][] default = () => {}
+* return [&lt;Function>][]
+
+Returns a function that accepts arguments `(err, ...args)`. If `err` is not
+`undefined` or `null`, it triggers an `AssertionError`. Otherwise, it calls
+`fn(...args)`.
+
 ### `nodeProcessAborted(exitCode, signal)`
 
 * `exitCode` [&lt;number>][]
@@ -368,6 +377,11 @@ const { spawn } = require('child_process');
 
 spawn(...common.pwdCommand, { stdio: ['pipe'] });
 ```
+
+### `requireNoPackageJSONAbove()`
+
+Throws an `AssertionError` if a `package.json` file is in any ancestor
+directory. Such files may interfere with proper test functionality.
 
 ### `runWithInvalidFD(func)`
 
@@ -587,7 +601,7 @@ If set, crypto tests are skipped.
 ### `NODE_TEST_KNOWN_GLOBALS`
 
 A comma-separated list of variables names that are appended to the global
-variable whitelist. Alternatively, if `NODE_TEST_KNOWN_GLOBALS` is set to `'0'`,
+variable allowlist. Alternatively, if `NODE_TEST_KNOWN_GLOBALS` is set to `'0'`,
 global leak detection is disabled.
 
 ## Fixtures Module
@@ -931,12 +945,17 @@ The realpath of the testing temporary directory.
 
 Deletes and recreates the testing temporary directory.
 
-The first time `refresh()` runs,  it adds a listener to process `'exit'` that
+The first time `refresh()` runs, it adds a listener to process `'exit'` that
 cleans the temporary directory. Thus, every file under `tmpdir.path` needs to
 be closed before the test completes. A good way to do this is to add a
 listener to process `'beforeExit'`. If a file needs to be left open until
 Node.js completes, use a child process and call `refresh()` only in the
 parent.
+
+It is usually only necessary to call `refresh()` once in a test file.
+Avoid calling it more than once in an asynchronous context as one call
+might refresh the temporary directory of a different context, causing
+the test to fail somewhat mysteriously.
 
 ## UDP pair helper
 

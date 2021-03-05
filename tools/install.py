@@ -19,8 +19,8 @@ def abspath(*args):
   return os.path.abspath(path)
 
 def load_config():
-  s = open('config.gypi').read()
-  return ast.literal_eval(s)
+  with open('config.gypi') as f:
+    return ast.literal_eval(f.read())
 
 def try_unlink(path):
   try:
@@ -132,10 +132,6 @@ def files(action):
       output_file += '.dll'
     else:
       output_file = 'lib' + output_file + '.' + variables.get('shlib_suffix')
-      # GYP will output to lib.target except on OS X, this is hardcoded
-      # in its source - see the _InstallableTargetInstallPath function.
-      if sys.platform != 'darwin':
-        output_prefix += 'lib.target/'
 
   if 'false' == variables.get('node_shared'):
     action([output_prefix + output_file], 'bin/' + output_file)
@@ -227,11 +223,19 @@ def run(args):
   cmd = args[1] if len(args) > 1 else 'install'
 
   if os.environ.get('HEADERS_ONLY'):
-    if cmd == 'install': return headers(install)
-    if cmd == 'uninstall': return headers(uninstall)
+    if cmd == 'install':
+      headers(install)
+      return
+    if cmd == 'uninstall':
+      headers(uninstall)
+      return
   else:
-    if cmd == 'install': return files(install)
-    if cmd == 'uninstall': return files(uninstall)
+    if cmd == 'install':
+      files(install)
+      return
+    if cmd == 'uninstall':
+      files(uninstall)
+      return
 
   raise RuntimeError('Bad command: %s\n' % cmd)
 

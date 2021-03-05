@@ -16,7 +16,9 @@ const ModuleFindPath = Module._findPath;
 const hacks = [
   'eslint-plugin-node-core',
   'eslint-plugin-markdown',
-  'babel-eslint',
+  '@babel/eslint-parser',
+  '@babel/plugin-syntax-class-properties',
+  '@babel/plugin-syntax-top-level-await',
 ];
 Module._findPath = (request, paths, isMain) => {
   const r = ModuleFindPath(request, paths, isMain);
@@ -37,15 +39,26 @@ Module._findPath = (request, paths, isMain) => {
 module.exports = {
   root: true,
   plugins: ['markdown', 'node-core'],
-  parser: 'babel-eslint',
-  parserOptions: { sourceType: 'script' },
+  parser: '@babel/eslint-parser',
+  parserOptions: {
+    babelOptions: {
+      plugins: [
+        Module._findPath('@babel/plugin-syntax-class-properties'),
+        Module._findPath('@babel/plugin-syntax-top-level-await'),
+      ],
+    },
+    requireConfigFile: false,
+    sourceType: 'script',
+  },
   overrides: [
     {
       files: [
-        'doc/api/esm.md',
-        'doc/api/module.md',
-        'doc/api/modules.md',
-        'doc/api/packages.md',
+        'doc/api/esm.md/*.js',
+        'doc/api/fs.md/*.js',
+        'doc/api/module.md/*.js',
+        'doc/api/modules.md/*.js',
+        'doc/api/packages.md/*.js',
+        'doc/api/wasi.md/*.js',
         'test/es-module/test-esm-type-flag.js',
         'test/es-module/test-esm-type-flag-alias.js',
         '*.mjs',
@@ -55,6 +68,10 @@ module.exports = {
     },
     {
       files: ['**/*.md'],
+      processor: 'markdown/markdown',
+    },
+    {
+      files: ['**/*.md/*.js'],
       parserOptions: { ecmaFeatures: { impliedStrict: true } },
       rules: { strict: 'off' },
     },
@@ -82,7 +99,13 @@ module.exports = {
         ignorePattern: '.*',
       },
     }],
-    'comma-dangle': ['error', 'only-multiline'],
+    'comma-dangle': ['error', {
+      arrays: 'always-multiline',
+      exports: 'only-multiline',
+      functions: 'only-multiline',
+      imports: 'only-multiline',
+      objects: 'only-multiline',
+    }],
     'comma-spacing': 'error',
     'comma-style': 'error',
     'computed-property-spacing': 'error',
@@ -150,6 +173,7 @@ module.exports = {
     'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0, maxBOF: 0 }],
     'no-new-require': 'error',
     'no-new-symbol': 'error',
+    'no-nonoctal-decimal-escape': 'error',
     'no-obj-calls': 'error',
     'no-octal': 'error',
     'no-path-concat': 'error',
@@ -226,6 +250,8 @@ module.exports = {
     'no-unreachable': 'error',
     'no-unsafe-finally': 'error',
     'no-unsafe-negation': 'error',
+    'no-unsafe-optional-chaining': 'error',
+    'no-unused-expressions': ['error', { allowShortCircuit: true }],
     'no-unused-labels': 'error',
     'no-unused-vars': ['error', { args: 'none', caughtErrors: 'all' }],
     'no-use-before-define': ['error', {
@@ -243,6 +269,7 @@ module.exports = {
     'no-void': 'error',
     'no-whitespace-before-property': 'error',
     'no-with': 'error',
+    'object-curly-newline': 'error',
     'object-curly-spacing': ['error', 'always'],
     'one-var': ['error', { initialized: 'never' }],
     'one-var-declaration-per-line': 'error',
@@ -287,6 +314,11 @@ module.exports = {
     BigInt: 'readable',
     BigInt64Array: 'readable',
     BigUint64Array: 'readable',
+    Event: 'readable',
+    EventTarget: 'readable',
+    MessageChannel: 'readable',
+    MessageEvent: 'readable',
+    MessagePort: 'readable',
     TextEncoder: 'readable',
     TextDecoder: 'readable',
     queueMicrotask: 'readable',

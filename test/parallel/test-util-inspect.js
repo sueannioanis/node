@@ -210,6 +210,17 @@ assert(!/Object/.test(
                      'ArrayBuffer { (detached), byteLength: 0 }');
 }
 
+// Truncate output for ArrayBuffers using plural or singular bytes
+{
+  const ab = new ArrayBuffer(3);
+  assert.strictEqual(util.inspect(ab, { showHidden: true, maxArrayLength: 2 }),
+                     'ArrayBuffer { [Uint8Contents]' +
+                      ': <00 00 ... 1 more byte>, byteLength: 3 }');
+  assert.strictEqual(util.inspect(ab, { showHidden: true, maxArrayLength: 1 }),
+                     'ArrayBuffer { [Uint8Contents]' +
+                      ': <00 ... 2 more bytes>, byteLength: 3 }');
+}
+
 // Now do the same checks but from a different context.
 {
   const showHidden = false;
@@ -583,9 +594,9 @@ assert.strictEqual(util.inspect(-5e-324), '-5e-324');
 {
   let obj = vm.runInNewContext('(function(){return {}})()', {});
   assert.strictEqual(util.inspect(obj), '{}');
-  obj = vm.runInNewContext('var m=new Map();m.set(1,2);m', {});
+  obj = vm.runInNewContext('const m=new Map();m.set(1,2);m', {});
   assert.strictEqual(util.inspect(obj), 'Map(1) { 1 => 2 }');
-  obj = vm.runInNewContext('var s=new Set();s.add(1);s.add(2);s', {});
+  obj = vm.runInNewContext('const s=new Set();s.add(1);s.add(2);s', {});
   assert.strictEqual(util.inspect(obj), 'Set(2) { 1, 2 }');
   obj = vm.runInNewContext('fn=function(){};new Promise(fn,fn)', {});
   assert.strictEqual(util.inspect(obj), 'Promise { <pending> }');
@@ -2011,6 +2022,11 @@ assert.strictEqual(util.inspect('"\'${a}'), "'\"\\'${a}'");
     rest[rest.length - 1] = rest[rest.length - 1].slice(0, -1);
     rest.length = 1;
   }
+  Object.setPrototypeOf(clazz, Map.prototype);
+  assert.strictEqual(
+    util.inspect(clazz),
+    ['[class', name, '[Map]', ...rest].join(' ') + ']'
+  );
   Object.setPrototypeOf(clazz, null);
   assert.strictEqual(
     util.inspect(clazz),
@@ -2716,16 +2732,16 @@ assert.strictEqual(
   const stack = [
     'TypedError: Wonderful message!',
     '    at A.<anonymous> (/test/node_modules/foo/node_modules/bar/baz.js:2:7)',
-    '    at Module._compile (internal/modules/cjs/loader.js:827:30)',
-    '    at Fancy (vm.js:697:32)',
+    '    at Module._compile (node:internal/modules/cjs/loader:827:30)',
+    '    at Fancy (node:vm:697:32)',
     // This file is not an actual Node.js core file.
-    '    at tryModuleLoad (internal/modules/cjs/foo.js:629:12)',
-    '    at Function.Module._load (internal/modules/cjs/loader.js:621:3)',
+    '    at tryModuleLoad (node:internal/modules/cjs/foo:629:12)',
+    '    at Function.Module._load (node:internal/modules/cjs/loader:621:3)',
     // This file is not an actual Node.js core file.
-    '    at Module.require [as weird/name] (internal/aaaaaa/loader.js:735:19)',
-    '    at require (internal/modules/cjs/helpers.js:14:16)',
+    '    at Module.require [as weird/name] (node:internal/aaaaa/loader:735:19)',
+    '    at require (node:internal/modules/cjs/helpers:14:16)',
     '    at /test/test-util-inspect.js:2239:9',
-    '    at getActual (assert.js:592:5)'
+    '    at getActual (node:assert:592:5)'
   ];
   const isNodeCoreFile = [
     false, false, true, true, false, true, false, true, false, true
@@ -2866,6 +2882,17 @@ assert.strictEqual(
   );
 }
 
+// Check that prototypes with a null prototype are inspectable.
+// Regression test for https://github.com/nodejs/node/issues/35730
+{
+  function Func() {}
+  Func.prototype = null;
+  const object = {};
+  object.constructor = Func;
+
+  assert.strictEqual(util.inspect(object), '{ constructor: [Function: Func] }');
+}
+
 // Test changing util.inspect.colors colors and aliases.
 {
   const colors = util.inspect.colors;
@@ -2899,6 +2926,12 @@ assert.strictEqual(
   assert.strictEqual(inspect(undetectable), '{}');
 }
 
+// Truncate output for Primitives with 1 character left
+{
+  assert.strictEqual(util.inspect('bl', { maxStringLength: 1 }),
+                     "'b'... 1 more character");
+}
+
 {
   const x = 'a'.repeat(1e6);
   assert(util.inspect(x).endsWith('... 990000 more characters'));
@@ -2906,6 +2939,7 @@ assert.strictEqual(
     util.inspect(x, { maxStringLength: 4 }),
     "'aaaa'... 999996 more characters"
   );
+  assert.match(util.inspect(x, { maxStringLength: null }), /a'$/);
 }
 
 {
@@ -2989,4 +3023,75 @@ assert.strictEqual(
 
   // Consistency check.
   assert(fullObjectGraph(global).has(Function.prototype));
+}
+
+{
+  // Confirm that own constructor value displays correctly.
+
+  function Fhqwhgads() {}
+
+  const sterrance = new Fhqwhgads();
+  sterrance.constructor = Fhqwhgads;
+
+  assert.strictEqual(
+    util.inspect(sterrance, { showHidden: true }),
+    'Fhqwhgads {\n' +
+      '  constructor: <ref *1> [Function: Fhqwhgads] {\n' +
+      '    [length]: 0,\n' +
+      "    [name]: 'Fhqwhgads',\n" +
+      '    [prototype]: { [constructor]: [Circular *1] }\n' +
+      '  }\n' +
+      '}'
+  );
+}
+
+{
+  // Confirm null prototype of generator prototype displays as expected.
+
+  function getProtoOfProto() {
+    return Object.getPrototypeOf(Object.getPrototypeOf(function* () {}));
+  }
+
+  function* generator() {}
+
+  const generatorPrototype = Object.getPrototypeOf(generator);
+  const originalProtoOfProto = Object.getPrototypeOf(generatorPrototype);
+  assert.strictEqual(getProtoOfProto(), originalProtoOfProto);
+  Object.setPrototypeOf(generatorPrototype, null);
+  assert.notStrictEqual(getProtoOfProto, originalProtoOfProto);
+
+  // This is the actual test. The other assertions in this block are about
+  // making sure the test is set up correctly and isn't polluting other tests.
+  assert.strictEqual(
+    util.inspect(generator, { showHidden: true }),
+    '[GeneratorFunction: generator] {\n' +
+    '  [length]: 0,\n' +
+    "  [name]: 'generator',\n" +
+    "  [prototype]: Object [Generator] { [Symbol(Symbol.toStringTag)]: 'Generator' },\n" + // eslint-disable-line max-len
+    "  [Symbol(Symbol.toStringTag)]: 'GeneratorFunction'\n" +
+    '}'
+  );
+
+  // Reset so we don't pollute other tests
+  Object.setPrototypeOf(generatorPrototype, originalProtoOfProto);
+  assert.strictEqual(getProtoOfProto(), originalProtoOfProto);
+}
+
+{
+  // Test for when breakLength results in a single column.
+  const obj = Array(9).fill('fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf');
+  assert.strictEqual(
+    util.inspect(obj, { breakLength: 256 }),
+    '[\n' +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
+    "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf'\n" +
+    ']'
+  );
 }

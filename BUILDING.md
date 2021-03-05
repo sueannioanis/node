@@ -8,7 +8,7 @@ If you can reproduce a test failure, search for it in the
 [Node.js issue tracker](https://github.com/nodejs/node/issues) or
 file a new issue.
 
-## Table of Contents
+## Table of contents
 
 * [Supported platforms](#supported-platforms)
   * [Input](#input)
@@ -24,11 +24,13 @@ file a new issue.
     * [Unix prerequisites](#unix-prerequisites)
     * [macOS prerequisites](#macos-prerequisites)
     * [Building Node.js](#building-nodejs-1)
+    * [Installing Node.js](#installing-nodejs)
     * [Running Tests](#running-tests)
     * [Running Coverage](#running-coverage)
     * [Building the documentation](#building-the-documentation)
     * [Building a debug build](#building-a-debug-build)
     * [Building an ASAN build](#building-an-asan-build)
+    * [Speeding up frequent rebuilds when developing](#speeding-up-frequent-rebuilds-when-developing)
     * [Troubleshooting Unix and macOS builds](#troubleshooting-unix-and-macos-builds)
   * [Windows](#windows)
     * [Prerequisites](#prerequisites)
@@ -112,6 +114,7 @@ platforms. This is true regardless of entries in the table below.
 | Windows          | x64, x86         | Windows Server 2012 (not R2)    | Experimental |                                   |
 | Windows          | arm64            | >= Windows 10                   | Tier 2 (compiling) / Experimental (running) |    |
 | macOS            | x64              | >= 10.13                        | Tier 1       |                                   |
+| macOS            | arm64            | >= 11                           | Experimental |                                   |
 | SmartOS          | x64              | >= 18                           | Tier 2       |                                   |
 | AIX              | ppc64be >=power7 | >= 7.2 TL02                     | Tier 2       |                                   |
 | FreeBSD          | x64              | >= 11                           | Experimental | Downgraded as of Node.js 12  <sup>[7](#fn7)</sup>     |
@@ -166,16 +169,16 @@ Depending on the host platform, the selection of toolchains may vary.
 
 Binaries at <https://nodejs.org/download/release/> are produced on:
 
-| Binary package        | Platform and Toolchain                                                   |
-| --------------------- | ------------------------------------------------------------------------ |
-| aix-ppc64             | AIX 7.1 TL05 on PPC64BE with GCC 6                                       |
-| darwin-x64 (and .pkg) | macOS 10.15, Xcode Command Line Tools 11 with -mmacosx-version-min=10.13 |
-| linux-arm64           | CentOS 7 with devtoolset-8 / GCC 8 <sup>[8](#fn8)</sup>                  |
-| linux-armv7l          | Cross-compiled on Ubuntu 18.04 x64 with [custom GCC toolchain](https://github.com/rvagg/rpi-newer-crosstools)   |
-| linux-ppc64le         | CentOS 7 with devtoolset-8 / GCC 8 <sup>[8](#fn8)</sup>                  |
-| linux-s390x           | RHEL 7 with devtoolset-8 / GCC 8 <sup>[8](#fn8)</sup>                    |
-| linux-x64             | CentOS 7 with devtoolset-8 / GCC 8 <sup>[8](#fn8)</sup>                  |
-| win-x64 and win-x86   | Windows 2012 R2 (x64) with Visual Studio 2019                            |
+| Binary package        | Platform and Toolchain                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| aix-ppc64             | AIX 7.1 TL05 on PPC64BE with GCC 6                                                                            |
+| darwin-x64 (and .pkg) | macOS 10.15, Xcode Command Line Tools 11 with -mmacosx-version-min=10.13                                      |
+| linux-arm64           | CentOS 7 with devtoolset-8 / GCC 8 <sup>[8](#fn8)</sup>                                                       |
+| linux-armv7l          | Cross-compiled on Ubuntu 18.04 x64 with [custom GCC toolchain](https://github.com/rvagg/rpi-newer-crosstools) |
+| linux-ppc64le         | CentOS 7 with devtoolset-8 / GCC 8 <sup>[8](#fn8)</sup>                                                       |
+| linux-s390x           | RHEL 7 with devtoolset-8 / GCC 8 <sup>[8](#fn8)</sup>                                                         |
+| linux-x64             | CentOS 7 with devtoolset-8 / GCC 8 <sup>[8](#fn8)</sup>                                                       |
+| win-x64 and win-x86   | Windows 2012 R2 (x64) with Visual Studio 2019                                                                 |
 
 <em id="fn8">8</em>: The Enterprise Linux devtoolset-8 allows us to compile
 binaries with GCC 8 but linked to the glibc and libstdc++ versions of the host
@@ -215,10 +218,9 @@ Supported platforms and toolchains change with each major version of Node.js.
 This document is only valid for the current major version of Node.js.
 Consult previous versions of this document for older versions of Node.js:
 
-* [Node.js 13](https://github.com/nodejs/node/blob/v13.x/BUILDING.md)
+* [Node.js 14](https://github.com/nodejs/node/blob/v14.x/BUILDING.md)
 * [Node.js 12](https://github.com/nodejs/node/blob/v12.x/BUILDING.md)
 * [Node.js 10](https://github.com/nodejs/node/blob/v10.x/BUILDING.md)
-* [Node.js 8](https://github.com/nodejs/node/blob/v8.x/BUILDING.md)
 
 ## Building Node.js on supported platforms
 
@@ -299,7 +301,15 @@ project's root directory.
 $ sudo ./tools/macos-firewall.sh
 ```
 
-#### Running Tests
+#### Installing Node.js
+
+To install this version of Node.js into a system directory:
+
+```bash
+[sudo] make install
+```
+
+#### Running tests
 
 To verify the build:
 
@@ -369,7 +379,7 @@ You can use
 [node-code-ide-configs](https://github.com/nodejs/node-code-ide-configs)
 to run/debug tests, if your IDE configs are present.
 
-#### Running Coverage
+#### Running coverage
 
 It's good practice to ensure any code you add or change is covered by tests.
 You can do so by running the test suite with coverage enabled:
@@ -380,28 +390,32 @@ $ make coverage
 ```
 
 A detailed coverage report will be written to `coverage/index.html` for
-JavaScript coverage and to `coverage/cxxcoverage.html` for C++ coverage
-(if you only want to run the JavaScript tests then you do not need to run
-the first command `./configure --coverage`).
+JavaScript coverage and to `coverage/cxxcoverage.html` for C++ coverage.
 
-_Generating a test coverage report can take several minutes._
-
-To collect coverage for a subset of tests you can set the `CI_JS_SUITES` and
-`CI_NATIVE_SUITES` variables (to run specific suites, e.g., `child-process`, in
-isolation, unset the opposing `_SUITES` variable):
+If you only want to run the JavaScript tests then you do not need to run
+the first command (`./configure --coverage`). Run `make coverage-run-js`,
+to execute JavaScript tests independently of the C++ test suite:
 
 ```text
-$ CI_JS_SUITES=child-process CI_NATIVE_SUITES= make coverage
+$ make coverage-run-js
 ```
 
-The above command executes tests for the `child-process` subsystem and
-outputs the resulting coverage report.
-
-Alternatively, you can run `make coverage-run-js`, to execute JavaScript tests
-independently of the C++ test suite:
+If you are updating tests and want to collect coverage for a single test file
+(e.g. `test/parallel/test-stream2-transform.js`):
 
 ```text
-$ CI_JS_SUITES=fs CI_NATIVE_SUITES= make coverage-run-js
+$ make coverage-clean
+$ NODE_V8_COVERAGE=coverage/tmp python tools/test.py test/parallel/test-stream2-transform.js
+$ make coverage-report-js
+```
+
+You can collect coverage for the entire suite of tests for a given subsystem
+by providing the name of a subsystem:
+
+```text
+$ make coverage-clean
+$ NODE_V8_COVERAGE=coverage/tmp python tools/test.py -J --mode=release child-process
+$ make coverage-report-js
 ```
 
 The `make coverage` command downloads some tools to the project root directory.
@@ -458,12 +472,6 @@ To test if Node.js was built correctly:
 ./node -e "console.log('Hello from Node.js ' + process.version)"
 ```
 
-To install this version of Node.js into a system directory:
-
-```bash
-[sudo] make install
-```
-
 #### Building a debug build
 
 If you run into an issue where the information provided by the JS stack trace
@@ -518,6 +526,29 @@ show clear stacktrace if ASAN hits an issue.
 $  ./configure --debug --enable-asan && make -j4
 $ make test-only
 ```
+
+#### Speeding up frequent rebuilds when developing
+
+If you plan to frequently rebuild Node.js, especially if using several branches,
+installing `ccache` can help to greatly reduce build times. Set up with:
+```console
+$ sudo apt install ccache   # for Debian/Ubuntu, included in most Linux distros
+$ ccache -o cache_dir=<tmp_dir>
+$ ccache -o max_size=5.0G
+$ export CC="ccache gcc"    # add to your .profile
+$ export CXX="ccache g++"   # add to your .profile
+```
+This will allow for near-instantaneous rebuilds even when switching branches.
+
+When modifying only the JS layer in `lib`, it is possible to externally load it
+without modifying the executable:
+```console
+$ ./configure --node-builtin-modules-path $(pwd)
+```
+The resulting binary won't include any JS files and will try to load them from
+the specified directory. The JS debugger of Visual Studio Code supports this
+configuration since the November 2020 version and allows for setting
+breakpoints.
 
 #### Troubleshooting Unix and macOS builds
 
@@ -582,7 +613,7 @@ packages:
 
 To install Node.js prerequisites using
 [Boxstarter WebLauncher](https://boxstarter.org/WebLauncher), open
-<https://boxstarter.org/package/nr/url?https://raw.githubusercontent.com/nodejs/node/master/tools/bootstrap/windows_boxstarter>
+<https://boxstarter.org/package/nr/url?https://raw.githubusercontent.com/nodejs/node/HEAD/tools/bootstrap/windows_boxstarter>
 with Internet Explorer or Edge browser on the target machine.
 
 Alternatively, you can use PowerShell. Run those commands from an elevated
@@ -592,7 +623,7 @@ PowerShell terminal:
 Set-ExecutionPolicy Unrestricted -Force
 iex ((New-Object System.Net.WebClient).DownloadString('https://boxstarter.org/bootstrapper.ps1'))
 get-boxstarter -Force
-Install-BoxstarterPackage https://raw.githubusercontent.com/nodejs/node/master/tools/bootstrap/windows_boxstarter -DisableReboots
+Install-BoxstarterPackage https://raw.githubusercontent.com/nodejs/node/HEAD/tools/bootstrap/windows_boxstarter -DisableReboots
 ```
 
 The entire installation using Boxstarter will take up approximately 10 GB of

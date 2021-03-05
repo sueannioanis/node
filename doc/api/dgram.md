@@ -126,7 +126,7 @@ When sharing a UDP socket across multiple `cluster` workers, the
 ```js
 const cluster = require('cluster');
 const dgram = require('dgram');
-if (cluster.isMaster) {
+if (cluster.isPrimary) {
   cluster.fork(); // Works ok.
   cluster.fork(); // Fails with EADDRINUSE.
 } else {
@@ -174,7 +174,8 @@ This method throws `EBADF` if called on an unbound socket.
 <!-- YAML
 added: v0.1.99
 changes:
-  - version: v0.10
+  - version: v0.9.1
+    commit: 332fea5ac1816e498030109c4211bca24a7fa667
     description: The method was changed to an asynchronous execution model.
                  Legacy code would need to be changed to pass a callback
                  function to the method call.
@@ -405,9 +406,14 @@ if the socket is not connected.
 <!-- YAML
 added: v0.1.99
 changes:
-  - version: v14.5.0
+  - version:
+    - v14.5.0
+    - v12.19.0
     pr-url: https://github.com/nodejs/node/pull/22413
     description: The `msg` parameter can now be any `TypedArray` or `DataView`.
+  - version: v12.0.0
+    pr-url: https://github.com/nodejs/node/pull/26871
+    description: Added support for sending data on connected sockets.
   - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/11985
     description: The `msg` parameter can be an `Uint8Array` now.
@@ -422,9 +428,6 @@ changes:
     pr-url: https://github.com/nodejs/node/pull/4374
     description: The `msg` parameter can be an array now. Also, the `offset`
                  and `length` parameters are optional now.
-  - version: v12.0.0
-    pr-url: https://github.com/nodejs/node/pull/26871
-    description: Added support for sending data on connected sockets.
 -->
 
 * `msg` {Buffer|TypedArray|DataView|string|Array} Message to be sent.
@@ -732,16 +735,19 @@ chained.
 <!-- YAML
 added: v0.11.13
 changes:
-  - version: v8.6.0
-    pr-url: https://github.com/nodejs/node/pull/14560
-    description: The `lookup` option is supported.
+  - version: v15.8.0
+    pr-url: https://github.com/nodejs/node/pull/37026
+    description: AbortSignal support was added.
+  - version: v11.4.0
+    pr-url: https://github.com/nodejs/node/pull/23798
+    description: The `ipv6Only` option is supported.
   - version: v8.7.0
     pr-url: https://github.com/nodejs/node/pull/13623
     description: The `recvBufferSize` and `sendBufferSize` options are
                  supported now.
-  - version: v11.4.0
-    pr-url: https://github.com/nodejs/node/pull/23798
-    description: The `ipv6Only` option is supported.
+  - version: v8.6.0
+    pr-url: https://github.com/nodejs/node/pull/14560
+    description: The `lookup` option is supported.
 -->
 
 * `options` {Object} Available options are:
@@ -756,6 +762,7 @@ changes:
   * `recvBufferSize` {number} Sets the `SO_RCVBUF` socket value.
   * `sendBufferSize` {number} Sets the `SO_SNDBUF` socket value.
   * `lookup` {Function} Custom lookup function. **Default:** [`dns.lookup()`][].
+  * `signal` {AbortSignal} An AbortSignal that may be used to close a socket.
 * `callback` {Function} Attached as a listener for `'message'` events. Optional.
 * Returns: {dgram.Socket}
 
@@ -766,6 +773,20 @@ method will bind the socket to the "all interfaces" address on a random port
 (it does the right thing for both `udp4` and `udp6` sockets). The bound address
 and port can be retrieved using [`socket.address().address`][] and
 [`socket.address().port`][].
+
+If the `signal` option is enabled, calling `.abort()` on the corresponding
+`AbortController` is similar to calling `.close()` on the socket:
+
+```js
+const controller = new AbortController();
+const { signal } = controller;
+const server = dgram.createSocket({ type: 'udp4', signal });
+server.on('message', (msg, rinfo) => {
+  console.log(`server got: ${msg} from ${rinfo.address}:${rinfo.port}`);
+});
+// Later, when you want to close the server.
+controller.abort();
+```
 
 ### `dgram.createSocket(type[, callback])`
 <!-- YAML
@@ -785,21 +806,21 @@ interfaces" address on a random port (it does the right thing for both `udp4`
 and `udp6` sockets). The bound address and port can be retrieved using
 [`socket.address().address`][] and [`socket.address().port`][].
 
+[IPv6 Zone Indices]: https://en.wikipedia.org/wiki/IPv6_address#Scoped_literal_IPv6_addresses
+[RFC 4007]: https://tools.ietf.org/html/rfc4007
 [`'close'`]: #dgram_event_close
-[`ERR_SOCKET_BAD_PORT`]: errors.html#errors_err_socket_bad_port
-[`ERR_SOCKET_BUFFER_SIZE`]: errors.html#errors_err_socket_buffer_size
-[`ERR_SOCKET_DGRAM_IS_CONNECTED`]: errors.html#errors_err_socket_dgram_is_connected
-[`ERR_SOCKET_DGRAM_NOT_CONNECTED`]: errors.html#errors_err_socket_dgram_not_connected
-[`Error`]: errors.html#errors_class_error
-[`System Error`]: errors.html#errors_class_systemerror
+[`ERR_SOCKET_BAD_PORT`]: errors.md#errors_err_socket_bad_port
+[`ERR_SOCKET_BUFFER_SIZE`]: errors.md#errors_err_socket_buffer_size
+[`ERR_SOCKET_DGRAM_IS_CONNECTED`]: errors.md#errors_err_socket_dgram_is_connected
+[`ERR_SOCKET_DGRAM_NOT_CONNECTED`]: errors.md#errors_err_socket_dgram_not_connected
+[`Error`]: errors.md#errors_class_error
+[`System Error`]: errors.md#errors_class_systemerror
 [`close()`]: #dgram_socket_close_callback
-[`cluster`]: cluster.html
+[`cluster`]: cluster.md
 [`connect()`]: #dgram_socket_connect_port_address_callback
 [`dgram.createSocket()`]: #dgram_dgram_createsocket_options_callback
-[`dns.lookup()`]: dns.html#dns_dns_lookup_hostname_options_callback
+[`dns.lookup()`]: dns.md#dns_dns_lookup_hostname_options_callback
 [`socket.address().address`]: #dgram_socket_address
 [`socket.address().port`]: #dgram_socket_address
 [`socket.bind()`]: #dgram_socket_bind_port_address_callback
-[IPv6 Zone Indices]: https://en.wikipedia.org/wiki/IPv6_address#Scoped_literal_IPv6_addresses
-[RFC 4007]: https://tools.ietf.org/html/rfc4007
-[byte length]: buffer.html#buffer_static_method_buffer_bytelength_string_encoding
+[byte length]: buffer.md#buffer_static_method_buffer_bytelength_string_encoding

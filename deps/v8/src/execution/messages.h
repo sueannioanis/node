@@ -20,13 +20,14 @@ namespace v8 {
 namespace internal {
 namespace wasm {
 class WasmCode;
-}
+}  // namespace wasm
 
 // Forward declarations.
 class AbstractCode;
 class FrameArray;
 class JSMessageObject;
 class LookupIterator;
+class PrimitiveHeapObject;
 class SharedFunctionInfo;
 class SourceInfo;
 class WasmInstanceObject;
@@ -67,13 +68,13 @@ class StackFrameBase {
   virtual Handle<Object> GetFunction() const = 0;
 
   virtual Handle<Object> GetFileName() = 0;
-  virtual Handle<Object> GetFunctionName() = 0;
+  virtual Handle<PrimitiveHeapObject> GetFunctionName() = 0;
   virtual Handle<Object> GetScriptNameOrSourceUrl() = 0;
-  virtual Handle<Object> GetMethodName() = 0;
-  virtual Handle<Object> GetTypeName() = 0;
-  virtual Handle<Object> GetEvalOrigin();
-  virtual Handle<Object> GetWasmModuleName();
-  virtual Handle<Object> GetWasmInstance();
+  virtual Handle<PrimitiveHeapObject> GetMethodName() = 0;
+  virtual Handle<PrimitiveHeapObject> GetTypeName() = 0;
+  virtual Handle<PrimitiveHeapObject> GetEvalOrigin();
+  virtual Handle<PrimitiveHeapObject> GetWasmModuleName();
+  virtual Handle<HeapObject> GetWasmInstance();
 
   // Returns the script ID if one is attached, -1 otherwise.
   int GetScriptId() const;
@@ -86,7 +87,11 @@ class StackFrameBase {
   // Return 0-based Wasm function index. Returns -1 for non-Wasm frames.
   virtual int GetWasmFunctionIndex();
 
-  // Returns index for Promise.all() async frames, or -1 for other frames.
+  virtual int GetEnclosingColumnNumber() = 0;
+  virtual int GetEnclosingLineNumber() = 0;
+
+  // Returns the index of the rejected promise in the Promise combinator input,
+  // or -1 if this frame is not a Promise combinator frame.
   virtual int GetPromiseIndex() const = 0;
 
   virtual bool IsNative() = 0;
@@ -94,6 +99,7 @@ class StackFrameBase {
   virtual bool IsEval();
   virtual bool IsAsync() const = 0;
   virtual bool IsPromiseAll() const = 0;
+  virtual bool IsPromiseAny() const = 0;
   virtual bool IsConstructor() = 0;
   virtual bool IsStrict() const = 0;
 
@@ -121,14 +127,17 @@ class JSStackFrame : public StackFrameBase {
   Handle<Object> GetFunction() const override;
 
   Handle<Object> GetFileName() override;
-  Handle<Object> GetFunctionName() override;
+  Handle<PrimitiveHeapObject> GetFunctionName() override;
   Handle<Object> GetScriptNameOrSourceUrl() override;
-  Handle<Object> GetMethodName() override;
-  Handle<Object> GetTypeName() override;
+  Handle<PrimitiveHeapObject> GetMethodName() override;
+  Handle<PrimitiveHeapObject> GetTypeName() override;
 
   int GetPosition() const override;
   int GetLineNumber() override;
   int GetColumnNumber() override;
+
+  int GetEnclosingColumnNumber() override;
+  int GetEnclosingLineNumber() override;
 
   int GetPromiseIndex() const override;
 
@@ -136,6 +145,7 @@ class JSStackFrame : public StackFrameBase {
   bool IsToplevel() override;
   bool IsAsync() const override { return is_async_; }
   bool IsPromiseAll() const override { return is_promise_all_; }
+  bool IsPromiseAny() const override { return is_promise_any_; }
   bool IsConstructor() override { return is_constructor_; }
   bool IsStrict() const override { return is_strict_; }
 
@@ -155,6 +165,7 @@ class JSStackFrame : public StackFrameBase {
   bool is_async_ : 1;
   bool is_constructor_ : 1;
   bool is_promise_all_ : 1;
+  bool is_promise_any_ : 1;
   bool is_strict_ : 1;
 
   friend class FrameArrayIterator;
@@ -167,17 +178,19 @@ class WasmStackFrame : public StackFrameBase {
   Handle<Object> GetReceiver() const override;
   Handle<Object> GetFunction() const override;
 
-  Handle<Object> GetFileName() override { return Null(); }
-  Handle<Object> GetFunctionName() override;
+  Handle<Object> GetFileName() override;
+  Handle<PrimitiveHeapObject> GetFunctionName() override;
   Handle<Object> GetScriptNameOrSourceUrl() override;
-  Handle<Object> GetMethodName() override { return Null(); }
-  Handle<Object> GetTypeName() override { return Null(); }
-  Handle<Object> GetWasmModuleName() override;
-  Handle<Object> GetWasmInstance() override;
+  Handle<PrimitiveHeapObject> GetMethodName() override { return Null(); }
+  Handle<PrimitiveHeapObject> GetTypeName() override { return Null(); }
+  Handle<PrimitiveHeapObject> GetWasmModuleName() override;
+  Handle<HeapObject> GetWasmInstance() override;
 
   int GetPosition() const override;
   int GetLineNumber() override { return 0; }
   int GetColumnNumber() override;
+  int GetEnclosingColumnNumber() override;
+  int GetEnclosingLineNumber() override { return 0; }
   int GetWasmFunctionIndex() override { return wasm_func_index_; }
 
   int GetPromiseIndex() const override { return GetPosition(); }
@@ -186,12 +199,13 @@ class WasmStackFrame : public StackFrameBase {
   bool IsToplevel() override { return false; }
   bool IsAsync() const override { return false; }
   bool IsPromiseAll() const override { return false; }
+  bool IsPromiseAny() const override { return false; }
   bool IsConstructor() override { return false; }
   bool IsStrict() const override { return false; }
   bool IsInterpreted() const { return code_ == nullptr; }
 
  protected:
-  Handle<Object> Null() const;
+  Handle<PrimitiveHeapObject> Null() const;
 
   bool HasScript() const override;
   Handle<Script> GetScript() const override;
@@ -224,6 +238,9 @@ class AsmJsWasmStackFrame : public WasmStackFrame {
   int GetPosition() const override;
   int GetLineNumber() override;
   int GetColumnNumber() override;
+
+  int GetEnclosingColumnNumber() override;
+  int GetEnclosingLineNumber() override;
 
  private:
   friend class FrameArrayIterator;
@@ -291,16 +308,16 @@ class ErrorUtils : public AllStatic {
                                               Handle<JSObject> error,
                                               Handle<Object> stack_trace);
 
-  static Handle<Object> NewIteratorError(Isolate* isolate,
-                                         Handle<Object> source);
-  static Handle<Object> NewCalledNonCallableError(Isolate* isolate,
-                                                  Handle<Object> source);
-  static Handle<Object> NewConstructedNonConstructable(Isolate* isolate,
-                                                       Handle<Object> source);
+  static Handle<JSObject> NewIteratorError(Isolate* isolate,
+                                           Handle<Object> source);
+  static Handle<JSObject> NewCalledNonCallableError(Isolate* isolate,
+                                                    Handle<Object> source);
+  static Handle<JSObject> NewConstructedNonConstructable(Isolate* isolate,
+                                                         Handle<Object> source);
+  // Returns the Exception sentinel.
   static Object ThrowSpreadArgError(Isolate* isolate, MessageTemplate id,
                                     Handle<Object> object);
-  static Object ThrowLoadFromNullOrUndefined(Isolate* isolate,
-                                             Handle<Object> object);
+  // Returns the Exception sentinel.
   static Object ThrowLoadFromNullOrUndefined(Isolate* isolate,
                                              Handle<Object> object,
                                              MaybeHandle<Object> key);
@@ -308,7 +325,7 @@ class ErrorUtils : public AllStatic {
 
 class MessageFormatter {
  public:
-  static const char* TemplateString(MessageTemplate index);
+  V8_EXPORT_PRIVATE static const char* TemplateString(MessageTemplate index);
 
   V8_EXPORT_PRIVATE static MaybeHandle<String> Format(Isolate* isolate,
                                                       MessageTemplate index,

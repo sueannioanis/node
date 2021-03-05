@@ -40,6 +40,12 @@ const customTypesMap = {
   'WebAssembly.Instance':
     `${jsDocPrefix}Reference/Global_Objects/WebAssembly/Instance`,
 
+  'Blob': 'buffer.html#buffer_class_blob',
+
+  'BroadcastChannel':
+    'worker_threads.html#worker_threads_class_broadcastchannel_' +
+    'extends_eventtarget',
+
   'Iterable':
     `${jsDocPrefix}Reference/Iteration_protocols#The_iterable_protocol`,
   'Iterator':
@@ -71,7 +77,51 @@ const customTypesMap = {
   'Verify': 'crypto.html#crypto_class_verify',
   'crypto.constants': 'crypto.html#crypto_crypto_constants_1',
 
+  'CryptoKey': 'webcrypto.html#webcrypto_class_cryptokey',
+  'CryptoKeyPair': 'webcrypto.html#webcrypto_class_cryptokeypair',
+  'Crypto': 'webcrypto.html#webcrypto_class_crypto',
+  'SubtleCrypto': 'webcrypto.html#webcrypto_class_subtlecrypto',
+  'RsaOaepParams': 'webcrypto.html#webcrypto_class_rsaoaepparams',
+  'AesCtrParams': 'webcrypto.html#webcrypto_class_aesctrparams',
+  'AesCbcParams': 'webcrypto.html#webcrypto_class_aescbcparams',
+  'AesGcmParams': 'webcrypto.html#webcrypto_class_aesgcmparams',
+  'AesKwParams': 'webcrypto.html#webcrypto_class_aeskwparams',
+  'EcdhKeyDeriveParams': 'webcrypto.html#webcrypto_class_ecdhkeyderiveparams',
+  'HkdfParams': 'webcrypto.html#webcrypto_class_hkdfparams',
+  'Pbkdf2Params': 'webcrypto.html#webcrypto_class_pbkdf2params',
+  'HmacKeyGenParams': 'webcrypto.html#webcrypto_class_hmackeygenparams',
+  'AesKeyGenParams': 'webcrypto.html#webcrypto_class_aeskeygenparams',
+  'RsaHashedKeyGenParams':
+    'webcrypto.html#webcrypto_class_rsahashedkeygenparams',
+  'EcKeyGenParams': 'webcrypto.html#webcrypto_class_eckeygenparams',
+  'RsaHashedImportParams':
+    'webcrypto.html#webcrypto_class_rsahashedimportparams',
+  'EcKeyImportParams': 'webcrypto.html#webcrypto_class_eckeyimportparams',
+  'HmacImportParams': 'webcrypto.html#webcrypto_class_hmacimportparams',
+  'AesImportParams': 'webcrypto.html#webcrypto_class_aesimportparams',
+  'Pbkdf2ImportParams': 'webcrypto.html#webcrypto_class.pbkdf2importparams',
+  'HmacParams': 'webcrypto.html#webcrypto_class_hmacparams',
+  'EcdsaParams': 'webcrypto.html#webcrypto_class_ecdsaparams',
+  'RsaPssParams': 'webcrypto.html#webcrypto_class_rsapssparams',
+  'RsaSignParams': 'webcrypto.html#webcrypto_class_rsasignparams',
+  'NodeDhImportParams': 'webcrypto.html#webcrypto_class_nodedhimportparams',
+  'NodeDhKeyGenParams': 'webcrypto.html#webcrypto_class_nodedhkeygenparams',
+  'NodeDhDeriveBitsParams':
+    'webcrypto.html#webcrypto_class_nodedhderivebitsparams',
+  'NodeDsaImportParams': 'webcrypto.html#webcrypto_class_nodedsaimportparams',
+  'NodeDsaKeyGenParams': 'webcrypto.html#webcrypto_class_nodedsakeygenparams',
+  'NodeDsaSignParams': 'webcrypto.html#webcrypto_class_nodedsasignparams',
+  'NodeScryptImportParams':
+    'webcrypto.html#webcrypto_class_nodescryptimportparams',
+  'NodeScryptParams': 'webcrypto.html#webcrypto_class_nodescryptparams',
+  'NodeEdKeyImportParams':
+    'webcrypto.html#webcrypto_class_nodeedkeyimportparams',
+  'NodeEdKeyGenParams':
+    'webcrypto.html#webcrypto_class_nodeedkeygenparams',
+
   'dgram.Socket': 'dgram.html#dgram_class_dgram_socket',
+
+  'Channel': 'diagnostics_channel.html#diagnostics_channel_class_channel',
 
   'Domain': 'domain.html#domain_class_domain',
 
@@ -117,7 +167,7 @@ const customTypesMap = {
   'module': 'modules.html#modules_the_module_object',
 
   'module.SourceMap':
-    'modules_module.html#modules_module_class_module_sourcemap',
+    'module.html#module_class_module_sourcemap',
 
   'require': 'modules.html#modules_require_id',
 
@@ -132,6 +182,10 @@ const customTypesMap = {
   'os.constants.dlopen': 'os.html#os_dlopen_constants',
 
   'Histogram': 'perf_hooks.html#perf_hooks_class_histogram',
+  'IntervalHistogram':
+     'perf_hooks.html#perf_hooks_class_intervalhistogram_extends_histogram',
+  'RecordableHistogram':
+     'perf_hooks.html#perf_hooks_class_recordablehistogram_extends_histogram',
   'PerformanceEntry': 'perf_hooks.html#perf_hooks_class_performanceentry',
   'PerformanceNodeTiming':
     'perf_hooks.html#perf_hooks_class_performancenodetiming',
@@ -139,10 +193,6 @@ const customTypesMap = {
     'perf_hooks.html#perf_hooks_class_perf_hooks_performanceobserver',
   'PerformanceObserverEntryList':
     'perf_hooks.html#perf_hooks_class_performanceobserverentrylist',
-  'QuicEndpoint': 'quic.html#quic_class_quicendpoint',
-  'QuicSession': 'quic.html#quic_class_quicserversession_extends_quicsession',
-  'QuicSocket': 'quic.html#quic_net_createquicsocket_options',
-  'QuicStream': 'quic.html#quic_class_quicstream_extends_stream_duplex',
 
   'readline.Interface': 'readline.html#readline_class_interface',
 
@@ -168,9 +218,12 @@ const customTypesMap = {
   'URLSearchParams': 'url.html#url_class_urlsearchparams',
 
   'vm.Module': 'vm.html#vm_class_vm_module',
+  'vm.Script': 'vm.html#vm_class_vm_script',
   'vm.SourceTextModule': 'vm.html#vm_class_vm_sourcetextmodule',
 
   'MessagePort': 'worker_threads.html#worker_threads_class_messageport',
+
+  'X509Certificate': 'crypto.html#crypto_class_x509certificate',
 
   'zlib options': 'zlib.html#zlib_class_options',
 };

@@ -4,6 +4,9 @@
 
 extern class ScopeInfo extends FixedArray;
 
+extern macro EmptyScopeInfoConstant(): ScopeInfo;
+const kEmptyScopeInfo: ScopeInfo = EmptyScopeInfoConstant();
+
 const kScopeInfoFlagsIndex:
     constexpr int32 generates 'ScopeInfo::Fields::kFlags';
 
@@ -18,7 +21,7 @@ type VariableAllocationInfo extends uint32
 constexpr 'VariableAllocationInfo';
 
 // Properties of scopes.
-bitfield struct ScopeFlags extends uint32 {
+bitfield struct ScopeFlags extends uint31 {
   scope_type: ScopeType: 4 bit;
   sloppy_eval_can_extend_vars: bool: 1 bit;
   language_mode: LanguageMode: 1 bit;
@@ -40,5 +43,6 @@ bitfield struct ScopeFlags extends uint32 {
   private_name_lookup_skips_outer_class: bool: 1 bit;
   has_context_extension_slot: bool: 1 bit;
   is_repl_mode_scope: bool: 1 bit;
-  has_locals_black_list: bool: 1 bit;
+  has_locals_block_list: bool: 1 bit;
+  is_empty: bool: 1 bit;
 }

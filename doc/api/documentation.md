@@ -43,6 +43,9 @@ Bugs or behavior changes may surprise users when Experimental API
 modifications occur. To avoid surprises, use of an Experimental feature may need
 a command-line flag. Experimental features may also emit a [warning][].
 
+## Stability overview
+<!-- STABILITY_OVERVIEW_SLOT -->
+
 ## JSON output
 <!-- YAML
 added: v0.6.12
@@ -60,7 +63,7 @@ Most Unix system calls have Windows analogues. Still, behavior differences may
 be unavoidable.
 
 [Semantic Versioning]: https://semver.org/
-[the contributing guide]: https://github.com/nodejs/node/blob/master/CONTRIBUTING.md
-[the issue tracker]: https://github.com/nodejs/node/issues/new
 [V8 JavaScript engine]: https://v8.dev/
-[warning]: process.html#process_event_warning
+[the contributing guide]: https://github.com/nodejs/node/blob/HEAD/CONTRIBUTING.md
+[the issue tracker]: https://github.com/nodejs/node/issues/new
+[warning]: process.md#process_event_warning

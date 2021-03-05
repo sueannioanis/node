@@ -434,12 +434,18 @@ A [`TypeError`][] is thrown if `path` is not a string.
 ## `path.posix`
 <!-- YAML
 added: v0.11.15
+changes:
+  - version: v15.3.0
+    pr-url: https://github.com/nodejs/node/pull/34962
+    description: Exposed as `require('path/posix')`.
 -->
 
 * {Object}
 
 The `path.posix` property provides access to POSIX specific implementations
 of the `path` methods.
+
+The API is accessible via `require('path').posix` or `require('path/posix')`.
 
 ## `path.relative(from, to)`
 <!-- YAML
@@ -568,6 +574,10 @@ method is non-operational and always returns `path` without modifications.
 ## `path.win32`
 <!-- YAML
 added: v0.11.15
+changes:
+  - version: v15.3.0
+    pr-url: https://github.com/nodejs/node/pull/34962
+    description: Exposed as `require('path/win32')`.
 -->
 
 * {Object}
@@ -575,10 +585,12 @@ added: v0.11.15
 The `path.win32` property provides access to Windows-specific implementations
 of the `path` methods.
 
-[`TypeError`]: errors.html#errors_class_typeerror
+The API is accessible via `require('path').win32` or `require('path/win32')`.
+
+[MSDN-Rel-Path]: https://docs.microsoft.com/en-us/windows/desktop/FileIO/naming-a-file#fully-qualified-vs-relative-paths
+[`TypeError`]: errors.md#errors_class_typeerror
 [`path.parse()`]: #path_path_parse_path
 [`path.posix`]: #path_path_posix
 [`path.sep`]: #path_path_sep
 [`path.win32`]: #path_path_win32
-[MSDN-Rel-Path]: https://docs.microsoft.com/en-us/windows/desktop/FileIO/naming-a-file#fully-qualified-vs-relative-paths
 [namespace-prefixed path]: https://docs.microsoft.com/en-us/windows/desktop/FileIO/naming-a-file#namespaces

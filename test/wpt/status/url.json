@@ -3,6 +3,10 @@
     "requires": ["small-icu"],
     "skip": "TODO: port from .window.js"
   },
+  "percent-encoding.window.js": {
+    "requires": ["small-icu"],
+    "skip": "TODO: port from .window.js"
+  },
   "historical.any.js": {
     "requires": ["small-icu"]
   },
@@ -13,9 +17,12 @@
     "fail": "getter/setter names are wrong, etc."
   },
   "urlsearchparams-constructor.any.js": {
-    "fail": "TODO: fix https://github.com/nodejs/node/issues/33892"
+    "fail": "FormData is not defined"
   },
-  "urlsearchparams-stringifier.any.js": {
-    "fail": "TODO: fix https://github.com/nodejs/node/issues/33892"
+  "url-constructor.any.js": {
+    "fail": "TODO: support relative fetch()"
+  },
+  "url-origin.any.js": {
+    "fail": "TODO: support relative fetch()"
   }
 }

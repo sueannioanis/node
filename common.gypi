@@ -111,6 +111,9 @@
       ['target_arch in "ppc64 s390x"', {
         'v8_enable_backtrace': 1,
       }],
+      ['OS=="linux"', {
+        'node_section_ordering_info%': ''
+      }]
     ],
   },
 
@@ -172,6 +175,20 @@
         },
         'cflags': [ '-O3' ],
         'conditions': [
+          ['OS=="linux"', {
+            'conditions': [
+              ['node_section_ordering_info!=""', {
+                'cflags': [
+                  '-fuse-ld=gold',
+                  '-ffunction-sections',
+                ],
+                'ldflags': [
+                  '-fuse-ld=gold',
+                  '-Wl,--section-ordering-file=<(node_section_ordering_info)',
+                ],
+              }],
+            ],
+          }],
           ['OS=="solaris"', {
             # pull in V8's postmortem metadata
             'ldflags': [ '-Wl,-z,allextract' ]
@@ -228,6 +245,7 @@
     'defines': [
       'V8_DEPRECATION_WARNINGS',
       'V8_IMMINENT_DEPRECATION_WARNINGS',
+      '_GLIBCXX_USE_CXX11_ABI=1',
     ],
 
     # Forcibly disable -Werror.  We support a wide range of compilers, it's
@@ -478,8 +496,7 @@
           ['_type!="static_library"', {
             'xcode_settings': {
               'OTHER_LDFLAGS': [
-                '-Wl,-no_pie',
-                '-Wl,-search_paths_first',
+                '-Wl,-search_paths_first'
               ],
             },
           }],

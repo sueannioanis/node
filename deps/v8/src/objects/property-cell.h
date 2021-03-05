@@ -6,7 +6,7 @@
 #define V8_OBJECTS_PROPERTY_CELL_H_
 
 #include "src/objects/heap-object.h"
-#include "torque-generated/field-offsets-tq.h"
+#include "torque-generated/field-offsets.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -17,19 +17,21 @@ namespace internal {
 class PropertyCell : public HeapObject {
  public:
   // [name]: the name of the global property.
-  DECL_ACCESSORS(name, Name)
+  DECL_GETTER(name, Name)
+
   // [property_details]: details of the global property.
   DECL_ACCESSORS(property_details_raw, Smi)
+
   // [value]: value of the global property.
   DECL_ACCESSORS(value, Object)
-  // [dependent_code]: dependent code that depends on the type of the global
-  // property.
+
+  // [dependent_code]: code that depends on the type of the global property.
   DECL_ACCESSORS(dependent_code, DependentCode)
 
   inline PropertyDetails property_details() const;
   inline void set_property_details(PropertyDetails details);
 
-  PropertyCellConstantType GetConstantType();
+  static PropertyCellType InitialType(Isolate* isolate, Handle<Object> value);
 
   // Computes the new type of the cell's contents for the given value, but
   // without actually modifying the details.
@@ -37,6 +39,7 @@ class PropertyCell : public HeapObject {
                                       Handle<PropertyCell> cell,
                                       Handle<Object> value,
                                       PropertyDetails details);
+
   // Prepares property cell at given entry for receiving given value.
   // As a result the old cell could be invalidated and/or dependent code could
   // be deoptimized. Returns the prepared property cell.
@@ -44,7 +47,8 @@ class PropertyCell : public HeapObject {
       Isolate* isolate, Handle<GlobalDictionary> dictionary,
       InternalIndex entry, Handle<Object> value, PropertyDetails details);
 
-  static Handle<PropertyCell> InvalidateEntry(
+  void ClearAndInvalidate(ReadOnlyRoots roots);
+  static Handle<PropertyCell> InvalidateAndReplaceEntry(
       Isolate* isolate, Handle<GlobalDictionary> dictionary,
       InternalIndex entry);
 
@@ -53,8 +57,6 @@ class PropertyCell : public HeapObject {
                                        Handle<Object> new_value);
 
   DECL_CAST(PropertyCell)
-
-  // Dispatched behavior.
   DECL_PRINTER(PropertyCell)
   DECL_VERIFIER(PropertyCell)
 
@@ -64,6 +66,11 @@ class PropertyCell : public HeapObject {
   using BodyDescriptor = FixedBodyDescriptor<kNameOffset, kSize, kSize>;
 
   OBJECT_CONSTRUCTORS(PropertyCell, HeapObject);
+
+ private:
+  friend class Factory;
+
+  DECL_SETTER(name, Name)
 };
 
 }  // namespace internal

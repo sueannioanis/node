@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/builtins/builtins-utils-gen.h"
 #include "src/builtins/builtins.h"
+#include "src/codegen/code-stub-assembler.h"
 #include "src/ic/accessor-assembler.h"
 
 namespace v8 {
@@ -26,6 +28,7 @@ IC_BUILTIN(LoadIC_Noninlined)
 IC_BUILTIN(LoadIC_NoFeedback)
 IC_BUILTIN(LoadICTrampoline)
 IC_BUILTIN(LoadICTrampoline_Megamorphic)
+IC_BUILTIN(LoadSuperIC)
 IC_BUILTIN(KeyedLoadIC)
 IC_BUILTIN(KeyedLoadIC_Megamorphic)
 IC_BUILTIN(KeyedLoadIC_PolymorphicName)
@@ -51,6 +54,14 @@ IC_BUILTIN_PARAM(LoadGlobalICTrampoline, LoadGlobalICTrampoline,
                  NOT_INSIDE_TYPEOF)
 IC_BUILTIN_PARAM(LoadGlobalICInsideTypeofTrampoline, LoadGlobalICTrampoline,
                  INSIDE_TYPEOF)
+
+TF_BUILTIN(DynamicCheckMaps, CodeStubAssembler) {
+  auto map = Parameter<Map>(Descriptor::kMap);
+  auto slot = UncheckedParameter<IntPtrT>(Descriptor::kSlot);
+  auto handler = Parameter<Object>(Descriptor::kHandler);
+  TNode<Int32T> status = DynamicCheckMaps(map, slot, handler);
+  Return(status);
+}
 
 }  // namespace internal
 }  // namespace v8

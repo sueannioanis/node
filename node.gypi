@@ -187,24 +187,6 @@
       'dependencies': [ 'deps/nghttp2/nghttp2.gyp:nghttp2' ],
     }],
 
-    [
-      'experimental_quic==1', {
-      'conditions': [
-        [
-          'node_shared_ngtcp2=="false"', {
-          'dependencies': [
-            'deps/ngtcp2/ngtcp2.gyp:ngtcp2',
-          ]}
-        ],
-        [
-          'node_shared_nghttp3=="false"', {
-          'dependencies': [
-            'deps/nghttp3/nghttp3.gyp:nghttp3'
-          ]}
-        ]
-      ]}
-    ],
-
     [ 'node_shared_brotli=="false"', {
       'dependencies': [ 'deps/brotli/brotli.gyp:brotli' ],
     }],
@@ -337,9 +319,6 @@
     [ 'node_use_openssl=="true"', {
       'defines': [ 'HAVE_OPENSSL=1' ],
       'conditions': [
-        ['openssl_fips != "" or openssl_is_fips=="true"', {
-          'defines': [ 'NODE_FIPS_MODE' ],
-        }],
         [ 'node_shared_openssl=="false"', {
           'dependencies': [
             './deps/openssl/openssl.gyp:openssl',

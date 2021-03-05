@@ -3,6 +3,7 @@
 deprecated: v1.4.2
 changes:
   - version: v8.8.0
+    pr-url: https://github.com/nodejs/node/pull/15695
     description: Any `Promise`s created in VM contexts no longer have a
                  `.domain` property. Their handlers are still executed in the
                  proper domain, however, and `Promise`s created in the main
@@ -54,7 +55,7 @@ triggered the error, while letting the others finish in their normal
 time, and stop listening for new requests in that worker.
 
 In this way, `domain` usage goes hand-in-hand with the cluster module,
-since the master process can fork a new worker when a worker
+since the primary process can fork a new worker when a worker
 encounters an error. For Node.js programs that scale to multiple
 machines, the terminating proxy or service registry can take note of
 the failure, and react accordingly.
@@ -89,9 +90,9 @@ appropriately, and handle errors with much greater safety.
 const cluster = require('cluster');
 const PORT = +process.env.PORT || 1337;
 
-if (cluster.isMaster) {
+if (cluster.isPrimary) {
   // A more realistic scenario would have more than 2 workers,
-  // and perhaps not put the master and worker in the same file.
+  // and perhaps not put the primary and worker in the same file.
   //
   // It is also possible to get a bit fancier about logging, and
   // implement whatever custom logic is needed to prevent DoS
@@ -99,7 +100,7 @@ if (cluster.isMaster) {
   //
   // See the options in the cluster documentation.
   //
-  // The important thing is that the master does very little,
+  // The important thing is that the primary does very little,
   // increasing our resilience to unexpected errors.
 
   cluster.fork();
@@ -141,8 +142,8 @@ if (cluster.isMaster) {
         // Stop taking new requests.
         server.close();
 
-        // Let the master know we're dead. This will trigger a
-        // 'disconnect' in the cluster master, and then it will fork
+        // Let the primary know we're dead. This will trigger a
+        // 'disconnect' in the cluster primary, and then it will fork
         // a new worker.
         cluster.worker.disconnect();
 
@@ -478,10 +479,10 @@ Domains will not interfere with the error handling mechanisms for
 promises. In other words, no `'error'` event will be emitted for unhandled
 `Promise` rejections.
 
-[`Error`]: errors.html#errors_class_error
+[`Error`]: errors.md#errors_class_error
 [`domain.add(emitter)`]: #domain_domain_add_emitter
 [`domain.bind(callback)`]: #domain_domain_bind_callback
 [`domain.exit()`]: #domain_domain_exit
-[`setInterval()`]: timers.html#timers_setinterval_callback_delay_args
-[`setTimeout()`]: timers.html#timers_settimeout_callback_delay_args
+[`setInterval()`]: timers.md#timers_setinterval_callback_delay_args
+[`setTimeout()`]: timers.md#timers_settimeout_callback_delay_args
 [`throw`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw

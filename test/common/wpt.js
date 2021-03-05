@@ -9,7 +9,7 @@ const path = require('path');
 const { inspect } = require('util');
 const { Worker } = require('worker_threads');
 
-// https://github.com/w3c/testharness.js/blob/master/testharness.js
+// https://github.com/web-platform-tests/wpt/blob/master/resources/testharness.js
 // TODO: get rid of this half-baked harness in favor of the one
 // pulled from WPT
 const harnessMock = {
@@ -118,7 +118,8 @@ class StatusRuleSet {
       if (key.includes('*')) {
         this.patternMatch.push(new StatusRule(key, rules[key], key));
       } else {
-        this.exactMatch[key] = new StatusRule(key, rules[key]);
+        const normalizedPath = path.normalize(key);
+        this.exactMatch[normalizedPath] = new StatusRule(key, rules[key]);
       }
     }
   }

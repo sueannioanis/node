@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include "src/objects/js-array-buffer.h"
-#include "src/objects/js-array-buffer-inl.h"
 
+#include "src/base/platform/wrappers.h"
 #include "src/execution/protectors-inl.h"
 #include "src/logging/counters.h"
+#include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/property-descriptor.h"
 
 namespace v8 {
@@ -44,6 +45,7 @@ void JSArrayBuffer::Setup(SharedFlag shared,
     SetEmbedderField(i, Smi::zero());
   }
   set_extension(nullptr);
+  AllocateExternalPointerEntries(GetIsolate());
   if (!backing_store) {
     set_backing_store(GetIsolate(), nullptr);
     set_byte_length(0);
@@ -65,16 +67,12 @@ void JSArrayBuffer::Attach(std::shared_ptr<BackingStore> backing_store) {
   set_byte_length(backing_store->byte_length());
   if (backing_store->is_wasm_memory()) set_is_detachable(false);
   if (!backing_store->free_on_destruct()) set_is_external(true);
-  if (V8_ARRAY_BUFFER_EXTENSION_BOOL) {
-    Heap* heap = isolate->heap();
-    ArrayBufferExtension* extension = EnsureExtension();
-    size_t bytes = backing_store->PerIsolateAccountingLength();
-    extension->set_accounting_length(bytes);
-    extension->set_backing_store(std::move(backing_store));
-    heap->AppendArrayBufferExtension(*this, extension);
-  } else {
-    isolate->heap()->RegisterBackingStore(*this, std::move(backing_store));
-  }
+  Heap* heap = isolate->heap();
+  ArrayBufferExtension* extension = EnsureExtension();
+  size_t bytes = backing_store->PerIsolateAccountingLength();
+  extension->set_accounting_length(bytes);
+  extension->set_backing_store(std::move(backing_store));
+  heap->AppendArrayBufferExtension(*this, extension);
 }
 
 void JSArrayBuffer::Detach(bool force_for_wasm_memory) {
@@ -90,11 +88,7 @@ void JSArrayBuffer::Detach(bool force_for_wasm_memory) {
   Isolate* const isolate = GetIsolate();
   if (backing_store()) {
     std::shared_ptr<BackingStore> backing_store;
-    if (V8_ARRAY_BUFFER_EXTENSION_BOOL) {
       backing_store = RemoveExtension();
-    } else {
-      backing_store = isolate->heap()->UnregisterBackingStore(*this);
-    }
     CHECK_IMPLIES(force_for_wasm_memory, backing_store->is_wasm_memory());
   }
 
@@ -110,16 +104,11 @@ void JSArrayBuffer::Detach(bool force_for_wasm_memory) {
 }
 
 std::shared_ptr<BackingStore> JSArrayBuffer::GetBackingStore() {
-  if (V8_ARRAY_BUFFER_EXTENSION_BOOL) {
     if (!extension()) return nullptr;
     return extension()->backing_store();
-  } else {
-    return GetIsolate()->heap()->LookupBackingStore(*this);
-  }
 }
 
 ArrayBufferExtension* JSArrayBuffer::EnsureExtension() {
-  DCHECK(V8_ARRAY_BUFFER_EXTENSION_BOOL);
   ArrayBufferExtension* extension = this->extension();
   if (extension != nullptr) return extension;
 
@@ -186,7 +175,7 @@ Handle<JSArrayBuffer> JSTypedArray::GetBuffer() {
 
   // Copy the elements into the backing store of the array buffer.
   if (byte_length > 0) {
-    memcpy(backing_store->buffer_start(), self->DataPtr(), byte_length);
+    base::Memcpy(backing_store->buffer_start(), self->DataPtr(), byte_length);
   }
 
   // Attach the backing store to the array buffer.
@@ -238,12 +227,12 @@ Maybe<bool> JSTypedArray::DefineOwnProperty(Isolate* isolate,
                        NewTypeError(MessageTemplate::kRedefineDisallowed, key));
       }
       // 3b vii. If Desc has a [[Configurable]] field and if
-      //         Desc.[[Configurable]] is true, return false.
+      //         Desc.[[Configurable]] is false, return false.
       // 3b viii. If Desc has an [[Enumerable]] field and if Desc.[[Enumerable]]
       //          is false, return false.
       // 3b ix. If Desc has a [[Writable]] field and if Desc.[[Writable]] is
       //        false, return false.
-      if ((desc->has_configurable() && desc->configurable()) ||
+      if ((desc->has_configurable() && !desc->configurable()) ||
           (desc->has_enumerable() && !desc->enumerable()) ||
           (desc->has_writable() && !desc->writable())) {
         RETURN_FAILURE(isolate, GetShouldThrow(isolate, should_throw),
@@ -253,7 +242,7 @@ Maybe<bool> JSTypedArray::DefineOwnProperty(Isolate* isolate,
       //   3b x 1. Let value be Desc.[[Value]].
       //   3b x 2. Return ? IntegerIndexedElementSet(O, numericIndex, value).
       if (desc->has_value()) {
-        if (!desc->has_configurable()) desc->set_configurable(false);
+        if (!desc->has_configurable()) desc->set_configurable(true);
         if (!desc->has_enumerable()) desc->set_enumerable(true);
         if (!desc->has_writable()) desc->set_writable(true);
         Handle<Object> value = desc->value();

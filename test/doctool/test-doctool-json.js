@@ -121,8 +121,7 @@ const testData = [
                   { 'version': 'v4.2.0',
                     'pr-url': 'https://github.com/nodejs/node/pull/3276',
                     'description': 'The `error` parameter can now be ' +
-                      'an arrow function.'
-                  }
+                      'an arrow function.' }
                 ]
               },
               desc: '<p>Describe <code>Foobar II</code> in more detail ' +
@@ -229,10 +228,8 @@ const testData = [
 ];
 
 testData.forEach((item) => {
-  fs.readFile(item.file, 'utf8', common.mustCall((err, input) => {
-    assert.ifError(err);
-    toJSON(input, 'foo', common.mustCall((err, output) => {
-      assert.ifError(err);
+  fs.readFile(item.file, 'utf8', common.mustSucceed((input) => {
+    toJSON(input, 'foo', common.mustSucceed((output) => {
       assert.deepStrictEqual(output.json, item.json);
     }));
   }));

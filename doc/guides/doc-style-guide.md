@@ -16,7 +16,7 @@ this guide.
 * Documents should be word-wrapped at 80 characters.
 * `.editorconfig` describes the preferred formatting.
   * A [plugin][] is available for some editors to apply these rules.
-* Check changes to documentation with `make lint-md`.
+* Check changes to documentation with `make test-doc -j` or `vcbuild test-doc`.
 * [Use US spelling][].
 * [Use serial commas][].
 * Avoid first-person pronouns (_I_, _we_).
@@ -39,21 +39,21 @@ this guide.
   * Use [language][]-aware fences. (<code>```js</code>)
   * For the [info string][], use one of the following.
 
-    | Meaning       | Info string       |
-    | ------------- | ----------------- |
-    | Bash          | `bash`            |
-    | C             | `c`               |
-    | C++           | `cpp`             |
-    | CoffeeScript  | `coffee`          |
-    | Diff          | `diff`            |
-    | HTTP          | `http`            |
-    | JavaScript    | `js`              |
-    | JSON          | `json`            |
-    | Markdown      | `markdown`        |
-    | Plaintext     | `text`            |
-    | Powershell    | `powershell`      |
-    | R             | `r`               |
-    | Shell Session | `console`         |
+    | Meaning       | Info string  |
+    | ------------- | ------------ |
+    | Bash          | `bash`       |
+    | C             | `c`          |
+    | C++           | `cpp`        |
+    | CoffeeScript  | `coffee`     |
+    | Diff          | `diff`       |
+    | HTTP          | `http`       |
+    | JavaScript    | `js`         |
+    | JSON          | `json`       |
+    | Markdown      | `markdown`   |
+    | Plaintext     | `text`       |
+    | Powershell    | `powershell` |
+    | R             | `r`          |
+    | Shell Session | `console`    |
 
     If one of your language-aware fences needs an info string that is not
     already on this list, you may use `text` until the grammar gets added to
@@ -108,5 +108,5 @@ For topics not covered here, refer to the [Microsoft Writing Style Guide][].
 [`remark-preset-lint-node`]: https://github.com/nodejs/remark-preset-lint-node
 [doctools README]: ../../tools/doc/README.md
 [info string]: https://github.github.com/gfm/#info-string
-[language]: https://github.com/highlightjs/highlight.js/blob/master/SUPPORTED_LANGUAGES.md
+[language]: https://github.com/highlightjs/highlight.js/blob/HEAD/SUPPORTED_LANGUAGES.md
 [plugin]: https://editorconfig.org/#download

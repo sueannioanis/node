@@ -6,6 +6,7 @@
 
 #include <fstream>
 
+#include "include/cppgc/platform.h"
 #include "src/api/api.h"
 #include "src/base/atomicops.h"
 #include "src/base/once.h"
@@ -98,9 +99,7 @@ void V8::InitializeOncePerProcessImpl() {
   // The --jitless and --interpreted-frames-native-stack flags are incompatible
   // since the latter requires code generation while the former prohibits code
   // generation.
-  CHECK_WITH_MSG(!FLAG_interpreted_frames_native_stack || !FLAG_jitless,
-                 "The --jitless and --interpreted-frames-native-stack flags "
-                 "are incompatible.");
+  CHECK(!FLAG_interpreted_frames_native_stack || !FLAG_jitless);
 
   base::OS::Initialize(FLAG_hard_abort, FLAG_gc_fake_mmap);
 
@@ -131,6 +130,7 @@ void V8::InitializePlatform(v8::Platform* platform) {
   platform_ = platform;
   v8::base::SetPrintStackTrace(platform_->GetStackTracePrinter());
   v8::tracing::TracingCategoryObserver::SetUp();
+  cppgc::InitializeProcess(platform->GetPageAllocator());
 }
 
 void V8::ShutdownPlatform() {
@@ -138,6 +138,7 @@ void V8::ShutdownPlatform() {
   v8::tracing::TracingCategoryObserver::TearDown();
   v8::base::SetPrintStackTrace(nullptr);
   platform_ = nullptr;
+  cppgc::ShutdownProcess();
 }
 
 v8::Platform* V8::GetCurrentPlatform() {

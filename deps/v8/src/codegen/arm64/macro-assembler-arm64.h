@@ -145,6 +145,10 @@ enum PreShiftImmMode {
   kAnyShift          // Allow any pre-shift.
 };
 
+// TODO(victorgomes): Move definition to macro-assembler.h, once all other
+// platforms are updated.
+enum class StackLimitKind { kInterruptStackLimit, kRealStackLimit };
+
 class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
  public:
   using TurboAssemblerBase::TurboAssemblerBase;
@@ -503,13 +507,13 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void Cbnz(const Register& rt, Label* label);
   void Cbz(const Register& rt, Label* label);
 
-  void Paciasp() {
+  void Pacibsp() {
     DCHECK(allow_macro_instructions_);
-    paciasp();
+    pacibsp();
   }
-  void Autiasp() {
+  void Autibsp() {
     DCHECK(allow_macro_instructions_);
-    autiasp();
+    autibsp();
   }
 
   // The 1716 pac and aut instructions encourage people to use x16 and x17
@@ -519,7 +523,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   //     Register temp = temps.AcquireX();  // temp will be x16
   //     __ Mov(x17, ptr);
   //     __ Mov(x16, modifier);  // Will override temp!
-  //     __ Pacia1716();
+  //     __ Pacib1716();
   //
   // To work around this issue, you must exclude x16 and x17 from the scratch
   // register list. You may need to replace them with other registers:
@@ -529,18 +533,18 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   //     temps.Include(x10, x11);
   //     __ Mov(x17, ptr);
   //     __ Mov(x16, modifier);
-  //     __ Pacia1716();
-  void Pacia1716() {
+  //     __ Pacib1716();
+  void Pacib1716() {
     DCHECK(allow_macro_instructions_);
     DCHECK(!TmpList()->IncludesAliasOf(x16));
     DCHECK(!TmpList()->IncludesAliasOf(x17));
-    pacia1716();
+    pacib1716();
   }
-  void Autia1716() {
+  void Autib1716() {
     DCHECK(allow_macro_instructions_);
     DCHECK(!TmpList()->IncludesAliasOf(x16));
     DCHECK(!TmpList()->IncludesAliasOf(x17));
-    autia1716();
+    autib1716();
   }
 
   inline void Dmb(BarrierDomain domain, BarrierType type);
@@ -927,6 +931,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   inline void JumpIfEqual(Register x, int32_t y, Label* dest);
   inline void JumpIfLessThan(Register x, int32_t y, Label* dest);
 
+  void LoadMap(Register dst, Register object);
+
   inline void Fmov(VRegister fd, VRegister fn);
   inline void Fmov(VRegister fd, Register rn);
   // Provide explicit double and float interfaces for FP immediate moves, rather
@@ -968,6 +974,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // Load the builtin given by the Smi in |builtin_index| into the same
   // register.
   void LoadEntryFromBuiltinIndex(Register builtin_index);
+  void LoadEntryFromBuiltinIndex(Builtins::Name builtin_index,
+                                 Register destination);
   void CallBuiltinByIndex(Register builtin_index) override;
   void CallBuiltin(int builtin_index);
 
@@ -980,8 +988,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // The return address on the stack is used by frame iteration.
   void StoreReturnAddressAndCall(Register target);
 
-  void CallForDeoptimization(Address target, int deopt_id, Label* exit,
-                             DeoptimizeKind kind);
+  void CallForDeoptimization(Builtins::Name target, int deopt_id, Label* exit,
+                             DeoptimizeKind kind, Label* ret,
+                             Label* jump_deoptimization_entry_label);
 
   // Calls a C function.
   // The called function is not allowed to trigger a
@@ -1007,6 +1016,12 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void Fcvtzs(const VRegister& vd, const VRegister& vn, int fbits = 0) {
     DCHECK(allow_macro_instructions());
     fcvtzs(vd, vn, fbits);
+  }
+
+  void Fjcvtzs(const Register& rd, const VRegister& vn) {
+    DCHECK(allow_macro_instructions());
+    DCHECK(!rd.IsZero());
+    fjcvtzs(rd, vn);
   }
 
   inline void Fcvtzu(const Register& rd, const VRegister& fn);
@@ -1270,6 +1285,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   inline void Mrs(const Register& rt, SystemRegister sysreg);
   inline void Msr(SystemRegister sysreg, const Register& rt);
 
+  // Prologue claims an extra slot due to arm64's alignement constraints.
+  static constexpr int kExtraSlotClaimedByPrologue = 1;
   // Generates function prologue code.
   void Prologue();
 
@@ -1284,6 +1301,10 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void Cmeq(const VRegister& vd, const VRegister& vn, int imm) {
     DCHECK(allow_macro_instructions());
     cmeq(vd, vn, imm);
+  }
+  void Cmlt(const VRegister& vd, const VRegister& vn, int imm) {
+    DCHECK(allow_macro_instructions());
+    cmlt(vd, vn, imm);
   }
 
   inline void Neg(const Register& rd, const Operand& operand);
@@ -1419,7 +1440,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   void CallRecordWriteStub(Register object, Operand offset,
                            RememberedSetAction remembered_set_action,
-                           SaveFPRegsMode fp_mode, Handle<Code> code_target,
+                           SaveFPRegsMode fp_mode, int builtin_index,
                            Address wasm_target);
 };
 
@@ -1532,10 +1553,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   void Cmle(const VRegister& vd, const VRegister& vn, int imm) {
     DCHECK(allow_macro_instructions());
     cmle(vd, vn, imm);
-  }
-  void Cmlt(const VRegister& vd, const VRegister& vn, int imm) {
-    DCHECK(allow_macro_instructions());
-    cmlt(vd, vn, imm);
   }
 
   void Ld1(const VRegister& vt, const MemOperand& src) {
@@ -1706,6 +1723,12 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   inline void PopWRegList(RegList regs) {
     PopSizeRegList(regs, kWRegSizeInBits);
   }
+  inline void PushQRegList(RegList regs) {
+    PushSizeRegList(regs, kQRegSizeInBits, CPURegister::kVRegister);
+  }
+  inline void PopQRegList(RegList regs) {
+    PopSizeRegList(regs, kQRegSizeInBits, CPURegister::kVRegister);
+  }
   inline void PushDRegList(RegList regs) {
     PushSizeRegList(regs, kDRegSizeInBits, CPURegister::kVRegister);
   }
@@ -1767,8 +1790,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
     DecodeField<Field>(reg, reg);
   }
 
-  // TODO(victorgomes): inline this function once we remove V8_REVERSE_JSARGS
-  // flag.
   Operand ReceiverOperand(const Register arg_count);
 
   // ---- SMI and Number Utilities ----
@@ -1947,8 +1968,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   void LeaveExitFrame(bool save_doubles, const Register& scratch,
                       const Register& scratch2);
 
-  void LoadMap(Register dst, Register object);
-
   // Load the global proxy from the current context.
   void LoadGlobalProxy(Register dst);
 
@@ -1963,6 +1982,11 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
                         Register scratch2);
   void DecrementCounter(StatsCounter* counter, int value, Register scratch1,
                         Register scratch2);
+
+  // ---------------------------------------------------------------------------
+  // Stack limit utilities
+  void LoadStackLimit(Register destination, StackLimitKind kind);
+  void StackOverflowCheck(Register num_args, Label* stack_overflow);
 
   // ---------------------------------------------------------------------------
   // Garbage collector support (GC).
@@ -1998,7 +2022,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 // instructions. This scope prevents the MacroAssembler from being called and
 // literal pools from being emitted. It also asserts the number of instructions
 // emitted is what you specified when creating the scope.
-class InstructionAccurateScope {
+class V8_NODISCARD InstructionAccurateScope {
  public:
   explicit InstructionAccurateScope(TurboAssembler* tasm, size_t count = 0)
       : tasm_(tasm),
@@ -2048,7 +2072,7 @@ class InstructionAccurateScope {
 // original state, even if the lists were modified by some other means. Note
 // that this scope can be nested but the destructors need to run in the opposite
 // order as the constructors. We do not have assertions for this.
-class UseScratchRegisterScope {
+class V8_NODISCARD UseScratchRegisterScope {
  public:
   explicit UseScratchRegisterScope(TurboAssembler* tasm)
       : available_(tasm->TmpList()),
@@ -2086,7 +2110,7 @@ class UseScratchRegisterScope {
 #endif
     available_->Remove(list);
   }
-  void Include(const Register& reg1, const Register& reg2) {
+  void Include(const Register& reg1, const Register& reg2 = NoReg) {
     CPURegList list(reg1, reg2);
     Include(list);
   }

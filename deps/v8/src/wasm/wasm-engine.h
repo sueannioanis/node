@@ -14,6 +14,7 @@
 #include "src/base/platform/condition-variable.h"
 #include "src/base/platform/mutex.h"
 #include "src/tasks/cancelable-task.h"
+#include "src/tasks/operations-barrier.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-tier.h"
 #include "src/zone/accounting-allocator.h"
@@ -34,7 +35,7 @@ namespace wasm {
 #ifdef V8_ENABLE_WASM_GDB_REMOTE_DEBUGGING
 namespace gdb_server {
 class GdbServer;
-}
+}  // namespace gdb_server
 #endif  // V8_ENABLE_WASM_GDB_REMOTE_DEBUGGING
 
 class AsyncCompileJob;
@@ -137,6 +138,8 @@ class NativeModuleCache {
 class V8_EXPORT_PRIVATE WasmEngine {
  public:
   WasmEngine();
+  WasmEngine(const WasmEngine&) = delete;
+  WasmEngine& operator=(const WasmEngine&) = delete;
   ~WasmEngine();
 
   // Synchronously validates the given bytes that represent an encoded Wasm
@@ -243,12 +246,6 @@ class V8_EXPORT_PRIVATE WasmEngine {
   void AddIsolate(Isolate* isolate);
   void RemoveIsolate(Isolate* isolate);
 
-  template <typename T, typename... Args>
-  std::unique_ptr<T> NewBackgroundCompileTask(Args&&... args) {
-    return std::make_unique<T>(&background_compile_task_manager_,
-                               std::forward<Args>(args)...);
-  }
-
   // Trigger code logging for the given code objects in all Isolates which have
   // access to the NativeModule containing this code. This method can be called
   // from background threads.
@@ -336,7 +333,11 @@ class V8_EXPORT_PRIVATE WasmEngine {
 
   Handle<Script> GetOrCreateScript(Isolate*,
                                    const std::shared_ptr<NativeModule>&,
-                                   Vector<const char> source_url = {});
+                                   Vector<const char> source_url);
+
+  // Returns a barrier allowing background compile operations if valid and
+  // preventing this object from being destroyed.
+  std::shared_ptr<OperationsBarrier> GetBarrierForBackgroundCompile();
 
   // Call on process start and exit.
   static void InitializeOncePerProcess();
@@ -372,10 +373,6 @@ class V8_EXPORT_PRIVATE WasmEngine {
   WasmCodeManager code_manager_;
   AccountingAllocator allocator_;
 
-  // Task manager managing all background compile jobs. Before shut down of the
-  // engine, they must all be finished because they access the allocator.
-  CancelableTaskManager background_compile_task_manager_;
-
 #ifdef V8_ENABLE_WASM_GDB_REMOTE_DEBUGGING
   // Implements a GDB-remote stub for WebAssembly debugging.
   std::unique_ptr<gdb_server::GdbServer> gdb_server_;
@@ -403,6 +400,9 @@ class V8_EXPORT_PRIVATE WasmEngine {
   std::unordered_map<NativeModule*, std::unique_ptr<NativeModuleInfo>>
       native_modules_;
 
+  std::shared_ptr<OperationsBarrier> operations_barrier_{
+      std::make_shared<OperationsBarrier>()};
+
   // Size of code that became dead since the last GC. If this exceeds a certain
   // threshold, a new GC is triggered.
   size_t new_potentially_dead_code_size_ = 0;
@@ -415,8 +415,6 @@ class V8_EXPORT_PRIVATE WasmEngine {
 
   // End of fields protected by {mutex_}.
   //////////////////////////////////////////////////////////////////////////////
-
-  DISALLOW_COPY_AND_ASSIGN(WasmEngine);
 };
 
 }  // namespace wasm

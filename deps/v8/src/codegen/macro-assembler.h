@@ -60,10 +60,16 @@ enum AllocationFlags {
 namespace v8 {
 namespace internal {
 
-// Simulators only support C calls with up to kMaxCParameters parameters.
+// Maximum number of parameters supported in calls to C/C++. The C++ standard
+// defines a limit of 256 parameters but in simulator builds we provide only
+// limited support.
+#ifdef USE_SIMULATOR
 static constexpr int kMaxCParameters = 10;
+#else
+static constexpr int kMaxCParameters = 256;
+#endif
 
-class FrameScope {
+class V8_NODISCARD FrameScope {
  public:
   explicit FrameScope(TurboAssembler* tasm, StackFrame::Type type)
       : tasm_(tasm), type_(type), old_has_frame_(tasm->has_frame()) {
@@ -86,7 +92,7 @@ class FrameScope {
   bool old_has_frame_;
 };
 
-class FrameAndConstantPoolScope {
+class V8_NODISCARD FrameAndConstantPoolScope {
  public:
   FrameAndConstantPoolScope(MacroAssembler* masm, StackFrame::Type type)
       : masm_(masm),
@@ -121,7 +127,7 @@ class FrameAndConstantPoolScope {
 };
 
 // Class for scoping the the unavailability of constant pool access.
-class ConstantPoolUnavailableScope {
+class V8_NODISCARD ConstantPoolUnavailableScope {
  public:
   explicit ConstantPoolUnavailableScope(Assembler* assembler)
       : assembler_(assembler),
@@ -144,7 +150,7 @@ class ConstantPoolUnavailableScope {
   DISALLOW_IMPLICIT_CONSTRUCTORS(ConstantPoolUnavailableScope);
 };
 
-class AllowExternalCallThatCantCauseGC : public FrameScope {
+class V8_NODISCARD AllowExternalCallThatCantCauseGC : public FrameScope {
  public:
   explicit AllowExternalCallThatCantCauseGC(MacroAssembler* masm)
       : FrameScope(masm, StackFrame::NONE) {}
@@ -152,7 +158,7 @@ class AllowExternalCallThatCantCauseGC : public FrameScope {
 
 // Prevent the use of the RootArray during the lifetime of this
 // scope object.
-class NoRootArrayScope {
+class V8_NODISCARD NoRootArrayScope {
  public:
   explicit NoRootArrayScope(TurboAssembler* masm)
       : masm_(masm), old_value_(masm->root_array_available()) {

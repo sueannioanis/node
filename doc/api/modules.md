@@ -148,7 +148,7 @@ the `require.resolve()` function.
 Putting together all of the above, here is the high-level algorithm
 in pseudocode of what `require()` does:
 
-```text
+<pre>
 require(X) from module at path Y
 1. If X is a core module,
    a. return the core module
@@ -210,7 +210,7 @@ LOAD_PACKAGE_IMPORTS(X, DIR)
 2. If no scope was found, return.
 3. If the SCOPE/package.json "imports" is null or undefined, return.
 4. let MATCH = PACKAGE_IMPORTS_RESOLVE(X, pathToFileURL(SCOPE),
-  ["node", "require"]) defined in the ESM resolver.
+  ["node", "require"]) <a href="esm.md#resolver-algorithm-specification">defined in the ESM resolver</a>.
 5. RESOLVE_ESM_MATCH(MATCH).
 
 LOAD_PACKAGE_EXPORTS(X, DIR)
@@ -221,7 +221,7 @@ LOAD_PACKAGE_EXPORTS(X, DIR)
 3. Parse DIR/NAME/package.json, and look for "exports" field.
 4. If "exports" is null or undefined, return.
 5. let MATCH = PACKAGE_EXPORTS_RESOLVE(pathToFileURL(DIR/NAME), "." + SUBPATH,
-   `package.json` "exports", ["node", "require"]) defined in the ESM resolver.
+   `package.json` "exports", ["node", "require"]) <a href="esm.md#resolver-algorithm-specification">defined in the ESM resolver</a>.
 6. RESOLVE_ESM_MATCH(MATCH)
 
 LOAD_PACKAGE_SELF(X, DIR)
@@ -231,7 +231,7 @@ LOAD_PACKAGE_SELF(X, DIR)
 4. If the SCOPE/package.json "name" is not the first segment of X, return.
 5. let MATCH = PACKAGE_EXPORTS_RESOLVE(pathToFileURL(SCOPE),
    "." + X.slice("name".length), `package.json` "exports", ["node", "require"])
-   defined in the ESM resolver.
+   <a href="esm.md#resolver-algorithm-specification">defined in the ESM resolver</a>.
 6. RESOLVE_ESM_MATCH(MATCH)
 
 RESOLVE_ESM_MATCH(MATCH)
@@ -244,7 +244,7 @@ RESOLVE_ESM_MATCH(MATCH)
    a. LOAD_AS_FILE(RESOLVED_PATH)
    b. LOAD_AS_DIRECTORY(RESOLVED_PATH)
 5. THROW "not found"
-```
+</pre>
 
 ## Caching
 
@@ -503,7 +503,7 @@ wrapper that looks like the following:
 By doing this, Node.js achieves a few things:
 
 * It keeps top-level variables (defined with `var`, `const` or `let`) scoped to
-the module rather than the global object.
+  the module rather than the global object.
 * It helps to provide some global-looking variables that are actually specific
   to the module, such as:
   * The `module` and `exports` objects that the implementor can use to export
@@ -888,6 +888,14 @@ added: v0.1.16
 The identifier for the module. Typically this is the fully resolved
 filename.
 
+### `module.isPreloading`
+<!-- YAML
+added: v15.4.0
+-->
+
+* Type: {boolean} `true` if the module is running during the Node.js preload
+  phase.
+
 ### `module.loaded`
 <!-- YAML
 added: v0.1.16
@@ -901,7 +909,9 @@ loading.
 ### `module.parent`
 <!-- YAML
 added: v0.1.16
-deprecated: v14.6.0
+deprecated:
+  - v14.6.0
+  - v12.19.0
 -->
 
 > Stability: 0 - Deprecated: Please use [`require.main`][] and
@@ -911,7 +921,7 @@ deprecated: v14.6.0
 
 The module that first required this one, or `null` if the current module is the
 entry point of the current process, or `undefined` if the module was loaded by
-something that is not a CommonJS module (E.G.: REPL or `import`). Read only.
+something that is not a CommonJS module (E.G.: REPL or `import`).
 
 ### `module.path`
 <!-- YAML
@@ -951,39 +961,38 @@ in order to be used.
 ## The `Module` object
 
 This section was moved to
-[Modules: `module` core module](module.html#module_the_module_object).
+[Modules: `module` core module](module.md#module_the_module_object).
 
 <!-- Anchors to make sure old links find a target -->
 * <a id="modules_module_builtinmodules" href="module.html#module_module_builtinmodules">`module.builtinModules`</a>
 * <a id="modules_module_createrequire_filename" href="module.html#module_module_createrequire_filename">`module.createRequire(filename)`</a>
-* <a id="modules_module_createrequirefrompath_filename" href="module.html#module_module_createrequirefrompath_filename">`module.createRequireFromPath(filename)`</a>
 * <a id="modules_module_syncbuiltinesmexports" href="module.html#module_module_syncbuiltinesmexports">`module.syncBuiltinESMExports()`</a>
 
 ## Source map v3 support
 
 This section was moved to
-[Modules: `module` core module](module.html#module_source_map_v3_support).
+[Modules: `module` core module](module.md#module_source_map_v3_support).
 
 <!-- Anchors to make sure old links find a target -->
-* <a id="modules_module_findsourcemap_path_error" href="module.html#module_module_findsourcemap_path_error">`module.findSourceMap(path[, error])`</a>
+* <a id="modules_module_findsourcemap_path_error" href="module.html#module_module_findsourcemap_path">`module.findSourceMap(path)`</a>
 * <a id="modules_class_module_sourcemap" href="module.html#module_class_module_sourcemap">Class: `module.SourceMap`</a>
   * <a id="modules_new_sourcemap_payload" href="module.html#module_new_sourcemap_payload">`new SourceMap(payload)`</a>
   * <a id="modules_sourcemap_payload" href="module.html#module_sourcemap_payload">`sourceMap.payload`</a>
   * <a id="modules_sourcemap_findentry_linenumber_columnnumber" href="module.html#module_sourcemap_findentry_linenumber_columnnumber">`sourceMap.findEntry(lineNumber, columnNumber)`</a>
 
+[ECMAScript Modules]: esm.md
 [GLOBAL_FOLDERS]: #modules_loading_from_the_global_folders
-[`Error`]: errors.html#errors_class_error
+[`"main"`]: packages.md#packages_main
+[`Error`]: errors.md#errors_class_error
 [`__dirname`]: #modules_dirname
 [`__filename`]: #modules_filename
 [`module` object]: #modules_the_module_object
 [`module.id`]: #modules_module_id
 [`module.children`]: #modules_module_children
-[`path.dirname()`]: path.html#path_path_dirname_path
-[ECMAScript Modules]: esm.html
-[an error]: errors.html#errors_err_require_esm
+[`package.json`]: packages.md#packages_node_js_package_json_field_definitions
+[`path.dirname()`]: path.md#path_path_dirname_path
+[`require.main`]: #modules_require_main
+[an error]: errors.md#errors_err_require_esm
 [exports shortcut]: #modules_exports_shortcut
 [module resolution]: #modules_all_together
-[native addons]: addons.html
-[`require.main`]: #modules_require_main
-[`package.json`]: packages.html#packages_node_js_package_json_field_definitions
-[`"main"`]: packages.html#packages_main
+[native addons]: addons.md

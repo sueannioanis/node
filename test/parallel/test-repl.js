@@ -373,7 +373,7 @@ const errorTests = [
     send: 'npm install foobar',
     expect: [
       'npm should be run outside of the Node.js REPL, in your normal shell.',
-      '(Press Control-D to exit.)'
+      '(Press Ctrl+D to exit.)'
     ]
   },
   {
@@ -453,7 +453,7 @@ const errorTests = [
       /\.load/,
       /\.save/,
       '',
-      'Press ^C to abort current expression, ^D to exit the REPL',
+      'Press Ctrl+C to abort current expression, Ctrl+D to exit the REPL',
       /'thefourtheye'/
     ]
   },
@@ -757,7 +757,7 @@ const errorTests = [
   {
     send: 'console',
     expect: [
-      '{',
+      'Object [console] {',
       '  log: [Function: log],',
       '  warn: [Function: warn],',
       '  dir: [Function: dir],',
@@ -926,7 +926,7 @@ function event(ee, expected) {
       const data = inspect(expected, { compact: false });
       const msg = `The REPL did not reply as expected for:\n\n${data}`;
       reject(new Error(msg));
-    }, common.platformTimeout(1000));
+    }, common.platformTimeout(9999));
     ee.once('data', common.mustCall((...args) => {
       clearTimeout(timeout);
       resolve(...args);

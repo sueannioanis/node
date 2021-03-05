@@ -9,10 +9,11 @@ on:
       - v[0-9]+.x
 
 env:
-  NODE_VERSION: 12.x
+  NODE_VERSION: 14.x
 
 jobs:
   build-docs:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -23,10 +24,10 @@ jobs:
       - name: Environment Information
         run: npx envinfo
       - name: Build
-        run: NODE=$(which node) make doc-only
+        run: NODE=$(command -v node) make doc-only
       - uses: actions/upload-artifact@v1
         with:
           name: docs
           path: out/doc
-      - name: Check links
-        run: node tools/doc/checkLinks.js .
+      - name: Test
+        run: NODE=$(command -v node) make test-doc-ci TEST_CI_ARGS="-p actions"

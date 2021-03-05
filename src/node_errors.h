@@ -33,13 +33,33 @@ void OnFatalError(const char* location, const char* message);
   V(ERR_BUFFER_TOO_LARGE, Error)                                               \
   V(ERR_CONSTRUCT_CALL_REQUIRED, TypeError)                                    \
   V(ERR_CONSTRUCT_CALL_INVALID, TypeError)                                     \
+  V(ERR_CRYPTO_INITIALIZATION_FAILED, Error)                                   \
+  V(ERR_CRYPTO_INVALID_AUTH_TAG, TypeError)                                    \
+  V(ERR_CRYPTO_INVALID_COUNTER, TypeError)                                     \
+  V(ERR_CRYPTO_INVALID_CURVE, TypeError)                                       \
+  V(ERR_CRYPTO_INVALID_DIGEST, TypeError)                                      \
+  V(ERR_CRYPTO_INVALID_IV, TypeError)                                          \
+  V(ERR_CRYPTO_INVALID_JWK, TypeError)                                         \
+  V(ERR_CRYPTO_INVALID_KEYLEN, RangeError)                                     \
+  V(ERR_CRYPTO_INVALID_KEYPAIR, RangeError)                                    \
+  V(ERR_CRYPTO_INVALID_KEYTYPE, RangeError)                                    \
+  V(ERR_CRYPTO_INVALID_MESSAGELEN, RangeError)                                 \
+  V(ERR_CRYPTO_INVALID_SCRYPT_PARAMS, RangeError)                              \
+  V(ERR_CRYPTO_INVALID_STATE, Error)                                           \
+  V(ERR_CRYPTO_INVALID_TAG_LENGTH, RangeError)                                 \
+  V(ERR_CRYPTO_OPERATION_FAILED, Error)                                        \
   V(ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH, RangeError)                           \
   V(ERR_CRYPTO_UNKNOWN_CIPHER, Error)                                          \
   V(ERR_CRYPTO_UNKNOWN_DH_GROUP, Error)                                        \
+  V(ERR_CRYPTO_UNSUPPORTED_OPERATION, Error)                                   \
+  V(ERR_CRYPTO_JOB_INIT_FAILED, Error)                                         \
+  V(ERR_DLOPEN_FAILED, Error)                                                  \
   V(ERR_EXECUTION_ENVIRONMENT_NOT_AVAILABLE, Error)                            \
   V(ERR_INVALID_ARG_VALUE, TypeError)                                          \
   V(ERR_OSSL_EVP_INVALID_DIGEST, Error)                                        \
   V(ERR_INVALID_ARG_TYPE, TypeError)                                           \
+  V(ERR_INVALID_MODULE, Error)                                                 \
+  V(ERR_INVALID_THIS, TypeError)                                               \
   V(ERR_INVALID_TRANSFER_OBJECT, TypeError)                                    \
   V(ERR_MEMORY_ALLOCATION_FAILED, Error)                                       \
   V(ERR_MESSAGE_TARGET_CONTEXT_UNAVAILABLE, Error)                             \
@@ -58,8 +78,6 @@ void OnFatalError(const char* location, const char* message);
   V(ERR_WASI_NOT_STARTED, Error)                                               \
   V(ERR_WORKER_INIT_FAILED, Error)                                             \
   V(ERR_PROTO_ACCESS, Error)                                                   \
-  V(ERR_QUIC_CANNOT_SET_GROUPS, Error)                                         \
-  V(ERR_QUIC_FAILURE_SETTING_SNI_CONTEXT, Error)
 
 #define V(code, type)                                                         \
   inline v8::Local<v8::Value> code(v8::Isolate* isolate,                      \
@@ -89,12 +107,32 @@ void OnFatalError(const char* location, const char* message);
     "Buffer is not available for the current Context")                         \
   V(ERR_CONSTRUCT_CALL_INVALID, "Constructor cannot be called")                \
   V(ERR_CONSTRUCT_CALL_REQUIRED, "Cannot call constructor without `new`")      \
+  V(ERR_CRYPTO_INITIALIZATION_FAILED, "Initialization failed")                 \
+  V(ERR_CRYPTO_INVALID_AUTH_TAG, "Invalid authentication tag")                 \
+  V(ERR_CRYPTO_INVALID_COUNTER, "Invalid counter")                             \
+  V(ERR_CRYPTO_INVALID_CURVE, "Invalid EC curve name")                         \
+  V(ERR_CRYPTO_INVALID_DIGEST, "Invalid digest")                               \
+  V(ERR_CRYPTO_INVALID_IV, "Invalid initialization vector")                    \
+  V(ERR_CRYPTO_INVALID_JWK, "Invalid JWK format")                              \
+  V(ERR_CRYPTO_INVALID_KEYLEN, "Invalid key length")                           \
+  V(ERR_CRYPTO_INVALID_KEYPAIR, "Invalid key pair")                            \
+  V(ERR_CRYPTO_INVALID_KEYTYPE, "Invalid key type")                            \
+  V(ERR_CRYPTO_INVALID_MESSAGELEN, "Invalid message length")                   \
+  V(ERR_CRYPTO_INVALID_SCRYPT_PARAMS, "Invalid scrypt params")                 \
+  V(ERR_CRYPTO_INVALID_STATE, "Invalid state")                                 \
+  V(ERR_CRYPTO_INVALID_TAG_LENGTH, "Invalid taglength")                        \
+  V(ERR_CRYPTO_OPERATION_FAILED, "Operation failed")                           \
   V(ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH,                                       \
     "Input buffers must have the same byte length")                            \
   V(ERR_CRYPTO_UNKNOWN_CIPHER, "Unknown cipher")                               \
   V(ERR_CRYPTO_UNKNOWN_DH_GROUP, "Unknown DH group")                           \
+  V(ERR_CRYPTO_UNSUPPORTED_OPERATION, "Unsupported crypto operation")          \
+  V(ERR_CRYPTO_JOB_INIT_FAILED, "Failed to initialize crypto job config")      \
+  V(ERR_DLOPEN_FAILED, "DLOpen failed")                                        \
   V(ERR_EXECUTION_ENVIRONMENT_NOT_AVAILABLE,                                   \
     "Context not associated with Node.js environment")                         \
+  V(ERR_INVALID_MODULE, "No such module")                                      \
+  V(ERR_INVALID_THIS, "Value of \"this\" is the wrong type")                   \
   V(ERR_INVALID_TRANSFER_OBJECT, "Found invalid object in transferList")       \
   V(ERR_MEMORY_ALLOCATION_FAILED, "Failed to allocate memory")                 \
   V(ERR_OSSL_EVP_INVALID_DIGEST, "Invalid digest used")                        \
@@ -116,9 +154,7 @@ void OnFatalError(const char* location, const char* message);
   V(ERR_WORKER_INIT_FAILED, "Worker initialization failure")                   \
   V(ERR_PROTO_ACCESS,                                                          \
     "Accessing Object.prototype.__proto__ has been "                           \
-    "disallowed with --disable-proto=throw")                                   \
-  V(ERR_QUIC_CANNOT_SET_GROUPS, "Cannot set groups")                           \
-  V(ERR_QUIC_FAILURE_SETTING_SNI_CONTEXT, "Failure setting SNI context")
+    "disallowed with --disable-proto=throw")
 
 #define V(code, message)                                                     \
   inline v8::Local<v8::Value> code(v8::Isolate* isolate) {                   \

@@ -7,7 +7,6 @@ namespace native_module {
 using v8::Context;
 using v8::EscapableHandleScope;
 using v8::Function;
-using v8::Integer;
 using v8::Isolate;
 using v8::Local;
 using v8::MaybeLocal;
@@ -78,6 +77,9 @@ void NativeModuleLoader::InitializeModuleCategories() {
     "internal/main/"
   };
 
+  module_categories_.can_be_required.emplace(
+      "internal/deps/cjs-module-lexer/lexer");
+
   module_categories_.cannot_be_required = std::set<std::string> {
 #if !HAVE_INSPECTOR
       "inspector",
@@ -90,6 +92,7 @@ void NativeModuleLoader::InitializeModuleCategories() {
 
 #if !HAVE_OPENSSL
       "crypto",
+      "crypto/promises",
       "https",
       "http2",
       "tls",
@@ -101,10 +104,6 @@ void NativeModuleLoader::InitializeModuleCategories() {
       "internal/process/policy",
       "internal/streams/lazy_transform",
 #endif  // !HAVE_OPENSSL
-#if !NODE_EXPERIMENTAL_QUIC
-      "internal/quic/core",
-      "internal/quic/util",
-#endif
       "sys",  // Deprecated.
       "wasi",  // Experimental.
       "internal/test/binding",
@@ -118,7 +117,8 @@ void NativeModuleLoader::InitializeModuleCategories() {
       if (prefix.length() > id.length()) {
         continue;
       }
-      if (id.find(prefix) == 0) {
+      if (id.find(prefix) == 0 &&
+          module_categories_.can_be_required.count(id) == 0) {
         module_categories_.cannot_be_required.emplace(id);
       }
     }
@@ -256,12 +256,10 @@ MaybeLocal<Function> NativeModuleLoader::LookupAndCompile(
     return {};
   }
 
-  std::string filename_s = id + std::string(".js");
+  std::string filename_s = std::string("node:") + id;
   Local<String> filename =
       OneByteString(isolate, filename_s.c_str(), filename_s.size());
-  Local<Integer> line_offset = Integer::New(isolate, 0);
-  Local<Integer> column_offset = Integer::New(isolate, 0);
-  ScriptOrigin origin(filename, line_offset, column_offset, True(isolate));
+  ScriptOrigin origin(filename, 0, 0, true);
 
   ScriptCompiler::CachedData* cached_data = nullptr;
   {

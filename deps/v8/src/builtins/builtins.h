@@ -25,7 +25,7 @@ class RootVisitor;
 enum class InterpreterPushArgsMode : unsigned;
 namespace compiler {
 class CodeAssemblerState;
-}
+}  // namespace compiler
 
 template <typename T>
 static constexpr T FirstFromVarArgs(T x, ...) noexcept {
@@ -39,6 +39,9 @@ static constexpr T FirstFromVarArgs(T x, ...) noexcept {
 class Builtins {
  public:
   explicit Builtins(Isolate* isolate) : isolate_(isolate) {}
+
+  Builtins(const Builtins&) = delete;
+  Builtins& operator=(const Builtins&) = delete;
 
   void TearDown();
 
@@ -250,8 +253,6 @@ class Builtins {
   int js_entry_handler_offset_ = 0;
 
   friend class SetupIsolateDelegate;
-
-  DISALLOW_COPY_AND_ASSIGN(Builtins);
 };
 
 Builtins::Name ExampleBuiltinForTorqueFunctionPointerType(

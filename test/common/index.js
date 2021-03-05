@@ -50,7 +50,6 @@ const noop = () => {};
 
 const hasCrypto = Boolean(process.versions.openssl) &&
                   !process.env.NODE_SKIP_CRYPTO;
-const hasQuic = hasCrypto && Boolean(process.versions.ngtcp2);
 
 // Check for flags. Skip this for workers (both, the `cluster` module and
 // `worker_threads`) and child processes.
@@ -61,7 +60,7 @@ if (process.argv.length === 2 &&
     isMainThread &&
     hasCrypto &&
     require.main &&
-    require('cluster').isMaster) {
+    require('cluster').isPrimary) {
   // The copyright notice is relatively big and the flags could come afterwards.
   const bytesToRead = 1500;
   const buffer = Buffer.allocUnsafe(bytesToRead);
@@ -195,11 +194,9 @@ const PIPE = (() => {
   return path.join(pipePrefix, pipeName);
 })();
 
-/*
- * Check that when running a test with
- * `$node --abort-on-uncaught-exception $file child`
- * the process aborts.
- */
+// Check that when running a test with
+// `$node --abort-on-uncaught-exception $file child`
+// the process aborts.
 function childShouldThrowAndAbort() {
   let testCmd = '';
   if (!isWindows) {
@@ -255,7 +252,6 @@ function platformTimeout(ms) {
 }
 
 let knownGlobals = [
-  AbortController,
   clearImmediate,
   clearInterval,
   clearTimeout,
@@ -266,12 +262,21 @@ let knownGlobals = [
   queueMicrotask,
 ];
 
+// TODO(@jasnell): This check can be temporary. AbortController is
+// not currently supported in either Node.js 12 or 10, making it
+// difficult to run tests comparitively on those versions. Once
+// all supported versions have AbortController as a global, this
+// check can be removed and AbortController can be added to the
+// knownGlobals list above.
+if (global.AbortController)
+  knownGlobals.push(global.AbortController);
+
 if (global.gc) {
   knownGlobals.push(global.gc);
 }
 
-function allowGlobals(...whitelist) {
-  knownGlobals = knownGlobals.concat(whitelist);
+function allowGlobals(...allowlist) {
+  knownGlobals = knownGlobals.concat(allowlist);
 }
 
 if (process.env.NODE_TEST_KNOWN_GLOBALS !== '0') {
@@ -327,6 +332,14 @@ function runCallChecks(exitCode) {
 
 function mustCall(fn, exact) {
   return _mustCallInner(fn, exact, 'exact');
+}
+
+function mustSucceed(fn, exact) {
+  return mustCall(function(err, ...args) {
+    assert.ifError(err);
+    if (typeof fn === 'function')
+      return fn.apply(this, args);
+  }, exact);
 }
 
 function mustCallAtLeast(fn, minimum) {
@@ -410,7 +423,7 @@ function getCallSite(top) {
   const err = new Error();
   Error.captureStackTrace(err, top);
   // With the V8 Error API, the stack is not formatted until it is accessed
-  err.stack;
+  err.stack; // eslint-disable-line no-unused-expressions
   Error.prepareStackTrace = originalStackFormatter;
   return err.stack;
 }
@@ -599,11 +612,8 @@ function getBufferSources(buf) {
   return [...getArrayBufferViews(buf), new Uint8Array(buf).buffer];
 }
 
-// Crash the process on unhandled rejections.
-const crashOnUnhandledRejection = (err) => { throw err; };
-process.on('unhandledRejection', crashOnUnhandledRejection);
 function disableCrashOnUnhandledRejection() {
-  process.removeListener('unhandledRejection', crashOnUnhandledRejection);
+  process.on('unhandledRejection', () => {});
 }
 
 function getTTYfd() {
@@ -686,6 +696,20 @@ function gcUntil(name, condition) {
   });
 }
 
+function requireNoPackageJSONAbove() {
+  let possiblePackage = path.join(__dirname, '..', 'package.json');
+  let lastPackage = null;
+  while (possiblePackage !== lastPackage) {
+    if (fs.existsSync(possiblePackage)) {
+      assert.fail(
+        'This test shouldn\'t load properties from a package.json above ' +
+        `its file location. Found package.json at ${possiblePackage}.`);
+    }
+    lastPackage = possiblePackage;
+    possiblePackage = path.join(possiblePackage, '..', '..', 'package.json');
+  }
+}
+
 const common = {
   allowGlobals,
   buildType,
@@ -702,7 +726,6 @@ const common = {
   getTTYfd,
   hasIntl,
   hasCrypto,
-  hasQuic,
   hasMultiLocalhost,
   invalidArgTypeHelper,
   isAIX,
@@ -719,11 +742,13 @@ const common = {
   mustCall,
   mustCallAtLeast,
   mustNotCall,
+  mustSucceed,
   nodeProcessAborted,
   PIPE,
   platformTimeout,
   printSkipMessage,
   pwdCommand,
+  requireNoPackageJSONAbove,
   runWithInvalidFD,
   skip,
   skipIf32Bits,

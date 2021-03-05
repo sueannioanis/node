@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+utils.load('test/inspector/wasm-inspector-test.js');
+
 let {session, contextGroup, Protocol} =
     InspectorTest.start('Tests stepping through wasm scripts with source maps');
 session.setupScriptMap();
-
-utils.load('test/mjsunit/wasm/wasm-module-builder.js');
 
 var builder = new WasmModuleBuilder();
 
@@ -36,61 +36,47 @@ builder.addCustomSection('sourceMappingURL', [3, 97, 98, 99]);
 
 var module_bytes = builder.toArray();
 
-function instantiate(bytes) {
-  var buffer = new ArrayBuffer(bytes.length);
-  var view = new Uint8Array(buffer);
-  for (var i = 0; i < bytes.length; ++i) {
-    view[i] = bytes[i] | 0;
+InspectorTest.runAsyncTestSuite([
+  async function test() {
+    for (const action of ['stepInto', 'stepOver', 'stepOut', 'resume'])
+      InspectorTest.logProtocolCommandCalls('Debugger.' + action);
+
+    await Protocol.Debugger.enable();
+    WasmInspectorTest.instantiate(module_bytes);
+    const [, {params: wasmScript}] = await Protocol.Debugger.onceScriptParsed(2);
+
+    InspectorTest.log('Got wasm script: ' + wasmScript.url);
+    InspectorTest.log('Script sourceMapURL: ' + wasmScript.sourceMapURL);
+    InspectorTest.log('Requesting source for ' + wasmScript.url + '...');
+    const msg =
+        await Protocol.Debugger.getScriptSource({scriptId: wasmScript.scriptId});
+    InspectorTest.log(`Source retrieved without error: ${!msg.error}`);
+    InspectorTest.log(
+        `Setting breakpoint on offset 54 (on the setlocal before the call), url ${wasmScript.url}`);
+    const {result: {actualLocation}} = await Protocol.Debugger.setBreakpoint({
+      location:{scriptId: wasmScript.scriptId, lineNumber: 0, columnNumber: 54}});
+    InspectorTest.logMessage(actualLocation);
+    Protocol.Runtime.evaluate({expression: 'instance.exports.main(4)'});
+    await waitForPauseAndStep('stepInto');  // == stepOver, to call instruction
+    await waitForPauseAndStep('stepInto');  // into call to wasm_A
+    await waitForPauseAndStep('stepOver');  // over first nop
+    await waitForPauseAndStep('stepOut');   // out of wasm_A
+    await waitForPauseAndStep('stepOut');  // out of wasm_B, stop on breakpoint again
+    await waitForPauseAndStep('stepOver');  // to call
+    await waitForPauseAndStep('stepOver');  // over call
+    await waitForPauseAndStep('resume');  // to next breakpoint (third iteration)
+    await waitForPauseAndStep('stepInto');  // to call
+    await waitForPauseAndStep('stepInto');  // into wasm_A
+    await waitForPauseAndStep('stepOut');   // out to wasm_B
+    // Now step 8 times, until we are in wasm_A again.
+    for (let i = 0; i < 8; ++i) await waitForPauseAndStep('stepInto');
+    // 3 more times, back to wasm_B.
+    for (let i = 0; i < 3; ++i) await waitForPauseAndStep('stepInto');
+    // then just resume.
+    await waitForPauseAndStep('resume');
+    InspectorTest.log('exports.main returned!');
   }
-
-  var module = new WebAssembly.Module(buffer);
-  // Set global variable.
-  instance = new WebAssembly.Instance(module);
-}
-
-(async function test() {
-  for (const action of ['stepInto', 'stepOver', 'stepOut', 'resume'])
-    InspectorTest.logProtocolCommandCalls('Debugger.' + action);
-
-  await Protocol.Debugger.enable();
-  InspectorTest.log('Installing code an global variable and instantiate.');
-  Protocol.Runtime.evaluate({
-    expression: `var instance;(${instantiate.toString()})(${JSON.stringify(module_bytes)})`});
-  const [, {params: wasmScript}] = await Protocol.Debugger.onceScriptParsed(2);
-
-  InspectorTest.log('Got wasm script: ' + wasmScript.url);
-  InspectorTest.log('Script sourceMapURL: ' + wasmScript.sourceMapURL);
-  InspectorTest.log('Requesting source for ' + wasmScript.url + '...');
-  const msg =
-      await Protocol.Debugger.getScriptSource({scriptId: wasmScript.scriptId});
-  InspectorTest.log(`Source retrieved without error: ${!msg.error}`);
-  InspectorTest.log(
-      `Setting breakpoint on offset 54 (on the setlocal before the call), url ${wasmScript.url}`);
-  const {result: {actualLocation}} = await Protocol.Debugger.setBreakpoint({
-    location:{scriptId: wasmScript.scriptId, lineNumber: 0, columnNumber: 54}});
-  InspectorTest.logMessage(actualLocation);
-  Protocol.Runtime.evaluate({expression: 'instance.exports.main(4)'});
-  await waitForPauseAndStep('stepInto');  // == stepOver, to call instruction
-  await waitForPauseAndStep('stepInto');  // into call to wasm_A
-  await waitForPauseAndStep('stepOver');  // over first nop
-  await waitForPauseAndStep('stepOut');   // out of wasm_A
-  await waitForPauseAndStep('stepOut');  // out of wasm_B, stop on breakpoint again
-  await waitForPauseAndStep('stepOver');  // to call
-  await waitForPauseAndStep('stepOver');  // over call
-  await waitForPauseAndStep('resume');  // to next breakpoint (third iteration)
-  await waitForPauseAndStep('stepInto');  // to call
-  await waitForPauseAndStep('stepInto');  // into wasm_A
-  await waitForPauseAndStep('stepOut');   // out to wasm_B
-  // Now step 8 times, until we are in wasm_A again.
-  for (let i = 0; i < 8; ++i) await waitForPauseAndStep('stepInto');
-  // 3 more times, back to wasm_B.
-  for (let i = 0; i < 3; ++i) await waitForPauseAndStep('stepInto');
-  // then just resume.
-  await waitForPauseAndStep('resume');
-  InspectorTest.log('exports.main returned!');
-  InspectorTest.log('Finished!');
-  InspectorTest.completeTest();
-})();
+]);
 
 async function waitForPauseAndStep(stepAction) {
   const {params: {callFrames}} = await Protocol.Debugger.oncePaused();
@@ -105,19 +91,15 @@ async function waitForPauseAndStep(stepAction) {
       if (scope.type === 'global' || scope.type === 'module') {
         InspectorTest.logObject('   -- skipped');
       } else {
-        const {result: {result: {value}}} =
-            await Protocol.Runtime.callFunctionOn({
-              objectId: scope.object.objectId,
-              functionDeclaration: 'function() { return this; }',
-              returnByValue: true
+        const object = {};
+        const {result: {result: properties}} =
+            await Protocol.Runtime.getProperties({
+              objectId: scope.object.objectId
             });
-
-        if (scope.type === 'local') {
-          if (value.locals)
-            InspectorTest.log(`   locals: ${JSON.stringify(value.locals)}`);
-        } else {
-          InspectorTest.log(`   ${JSON.stringify(value)}`);
+        for (const {name, value: {value}} of properties) {
+          object[name] = value;
         }
+        InspectorTest.log(`   ${JSON.stringify(object)}`);
       }
     }
   }

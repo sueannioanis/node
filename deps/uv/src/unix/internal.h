@@ -282,12 +282,6 @@ int uv___stream_fd(const uv_stream_t* handle);
 #define uv__stream_fd(handle) ((handle)->io_watcher.fd)
 #endif /* defined(__APPLE__) */
 
-#ifdef O_NONBLOCK
-# define UV__F_NONBLOCK O_NONBLOCK
-#else
-# define UV__F_NONBLOCK 1
-#endif
-
 int uv__make_pipe(int fds[2], int flags);
 
 #if defined(__APPLE__)
@@ -334,15 +328,8 @@ struct uv__mmsghdr {
   unsigned int msg_len;
 };
 
-int uv__recvmmsg(int fd,
-                 struct uv__mmsghdr* mmsg,
-                 unsigned int vlen,
-                 unsigned int flags,
-                 struct timespec* timeout);
-int uv__sendmmsg(int fd,
-                 struct uv__mmsghdr* mmsg,
-                 unsigned int vlen,
-                 unsigned int flags);
+int uv__recvmmsg(int fd, struct uv__mmsghdr* mmsg, unsigned int vlen);
+int uv__sendmmsg(int fd, struct uv__mmsghdr* mmsg, unsigned int vlen);
 #else
 #define HAVE_MMSG 0
 #endif

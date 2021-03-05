@@ -1,6 +1,5 @@
 {
   'variables': {
-    'experimental_quic': 'false',
     'v8_use_siphash%': 0,
     'v8_trace_maps%': 0,
     'v8_enable_pointer_compression%': 0,
@@ -21,8 +20,6 @@
     'node_shared_cares%': 'false',
     'node_shared_libuv%': 'false',
     'node_shared_nghttp2%': 'false',
-    'node_shared_ngtcp2%': 'false',
-    'node_shared_nghttp3%': 'false',
     'node_use_openssl%': 'true',
     'node_shared_openssl%': 'false',
     'node_v8_options%': '',
@@ -51,6 +48,7 @@
       'lib/constants.js',
       'lib/crypto.js',
       'lib/cluster.js',
+      'lib/diagnostics_channel.js',
       'lib/dgram.js',
       'lib/dns.js',
       'lib/dns/promises.js',
@@ -72,6 +70,8 @@
       'lib/net.js',
       'lib/os.js',
       'lib/path.js',
+      'lib/path/posix.js',
+      'lib/path/win32.js',
       'lib/perf_hooks.js',
       'lib/process.js',
       'lib/punycode.js',
@@ -97,6 +97,7 @@
       'lib/tty.js',
       'lib/url.js',
       'lib/util.js',
+      'lib/util/types.js',
       'lib/v8.js',
       'lib/vm.js',
       'lib/wasi.js',
@@ -107,30 +108,40 @@
       'lib/internal/assert/assertion_error.js',
       'lib/internal/assert/calltracker.js',
       'lib/internal/async_hooks.js',
+      'lib/internal/blob.js',
       'lib/internal/blocklist.js',
       'lib/internal/buffer.js',
       'lib/internal/cli_table.js',
       'lib/internal/child_process.js',
       'lib/internal/child_process/serialization.js',
       'lib/internal/cluster/child.js',
-      'lib/internal/cluster/master.js',
+      'lib/internal/cluster/primary.js',
       'lib/internal/cluster/round_robin_handle.js',
       'lib/internal/cluster/shared_handle.js',
       'lib/internal/cluster/utils.js',
       'lib/internal/cluster/worker.js',
       'lib/internal/console/constructor.js',
       'lib/internal/console/global.js',
+      'lib/internal/crypto/aes.js',
       'lib/internal/crypto/certificate.js',
       'lib/internal/crypto/cipher.js',
       'lib/internal/crypto/diffiehellman.js',
+      'lib/internal/crypto/dsa.js',
+      'lib/internal/crypto/ec.js',
       'lib/internal/crypto/hash.js',
+      'lib/internal/crypto/hashnames.js',
+      'lib/internal/crypto/hkdf.js',
       'lib/internal/crypto/keygen.js',
       'lib/internal/crypto/keys.js',
+      'lib/internal/crypto/mac.js',
       'lib/internal/crypto/pbkdf2.js',
       'lib/internal/crypto/random.js',
+      'lib/internal/crypto/rsa.js',
       'lib/internal/crypto/scrypt.js',
       'lib/internal/crypto/sig.js',
       'lib/internal/crypto/util.js',
+      'lib/internal/crypto/webcrypto.js',
+      'lib/internal/crypto/x509.js',
       'lib/internal/constants.js',
       'lib/internal/dgram.js',
       'lib/internal/dns/promises.js',
@@ -182,6 +193,13 @@
       'lib/internal/modules/esm/translators.js',
       'lib/internal/net.js',
       'lib/internal/options.js',
+      'lib/internal/perf/perf.js',
+      'lib/internal/perf/nodetiming.js',
+      'lib/internal/perf/usertiming.js',
+      'lib/internal/perf/observe.js',
+      'lib/internal/perf/event_loop_delay.js',
+      'lib/internal/perf/event_loop_utilization.js',
+      'lib/internal/perf/timerify.js',
       'lib/internal/policy/manifest.js',
       'lib/internal/policy/sri.js',
       'lib/internal/priority_queue.js',
@@ -197,8 +215,6 @@
       'lib/internal/process/task_queues.js',
       'lib/internal/querystring.js',
       'lib/internal/readline/utils.js',
-      'lib/internal/quic/core.js',
-      'lib/internal/quic/util.js',
       'lib/internal/repl.js',
       'lib/internal/repl/await.js',
       'lib/internal/repl/history.js',
@@ -218,6 +234,7 @@
       'lib/internal/util/debuglog.js',
       'lib/internal/util/inspect.js',
       'lib/internal/util/inspector.js',
+      'lib/internal/util/iterable_weak_map.js',
       'lib/internal/util/types.js',
       'lib/internal/http2/core.js',
       'lib/internal/http2/compat.js',
@@ -232,14 +249,21 @@
       'lib/internal/worker/js_transferable.js',
       'lib/internal/watchdog.js',
       'lib/internal/streams/lazy_transform.js',
+      'lib/internal/streams/add-abort-signal.js',
       'lib/internal/streams/buffer_list.js',
       'lib/internal/streams/duplexpair.js',
       'lib/internal/streams/from.js',
       'lib/internal/streams/legacy.js',
+      'lib/internal/streams/readable.js',
+      'lib/internal/streams/writable.js',
+      'lib/internal/streams/duplex.js',
+      'lib/internal/streams/passthrough.js',
+      'lib/internal/streams/transform.js',
       'lib/internal/streams/destroy.js',
       'lib/internal/streams/state.js',
       'lib/internal/streams/pipeline.js',
       'lib/internal/streams/end-of-stream.js',
+      'lib/internal/streams/utils.js',
       'deps/v8/tools/splaytree.js',
       'deps/v8/tools/codemap.js',
       'deps/v8/tools/consarray.js',
@@ -257,10 +281,11 @@
       'deps/acorn/acorn/dist/acorn.js',
       'deps/acorn/acorn-walk/dist/walk.js',
       'deps/acorn-plugins/acorn-class-fields/index.js',
-      'deps/acorn-plugins/acorn-numeric-separator/index.js',
       'deps/acorn-plugins/acorn-private-class-elements/index.js',
       'deps/acorn-plugins/acorn-private-methods/index.js',
       'deps/acorn-plugins/acorn-static-class-features/index.js',
+      'deps/cjs-module-lexer/lexer.js',
+      'deps/cjs-module-lexer/dist/lexer.js',
     ],
     'node_mksnapshot_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)node_mksnapshot<(EXECUTABLE_SUFFIX)',
     'mkcodecache_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mkcodecache<(EXECUTABLE_SUFFIX)',
@@ -337,7 +362,7 @@
       'target_name': 'node_text_start',
       'type': 'none',
       'conditions': [
-        [ 'OS in "linux freebsd" and '
+        [ 'OS in "linux freebsd solaris" and '
           'target_arch=="x64"', {
           'type': 'static_library',
           'sources': [
@@ -560,6 +585,7 @@
       'sources': [
         'src/api/async_resource.cc',
         'src/api/callback.cc',
+        'src/api/embed_helpers.cc',
         'src/api/encoding.cc',
         'src/api/environment.cc',
         'src/api/exceptions.cc',
@@ -587,6 +613,7 @@
         'src/node.cc',
         'src/node_api.cc',
         'src/node_binding.cc',
+        'src/node_blob.cc',
         'src/node_buffer.cc',
         'src/node_config.cc',
         'src/node_constants.cc',
@@ -617,6 +644,7 @@
         'src/node_report_module.cc',
         'src/node_report_utils.cc',
         'src/node_serdes.cc',
+        'src/node_snapshotable.cc',
         'src/node_sockaddr.cc',
         'src/node_stat_watcher.cc',
         'src/node_symbols.cc',
@@ -662,6 +690,7 @@
         'src/base_object.h',
         'src/base_object-inl.h',
         'src/base64.h',
+        'src/base64-inl.h',
         'src/callback_queue.h',
         'src/callback_queue-inl.h',
         'src/connect_wrap.h',
@@ -684,6 +713,7 @@
         'src/node_api.h',
         'src/node_api_types.h',
         'src/node_binding.h',
+        'src/node_blob.h',
         'src/node_buffer.h',
         'src/node_constants.h',
         'src/node_context_data.h',
@@ -717,12 +747,14 @@
         'src/node_report.h',
         'src/node_revert.h',
         'src/node_root_certs.h',
+        'src/node_snapshotable.h',
         'src/node_sockaddr.h',
         'src/node_sockaddr-inl.h',
         'src/node_stat_watcher.h',
         'src/node_union_bytes.h',
         'src/node_url.h',
         'src/node_version.h',
+        'src/node_v8.h',
         'src/node_v8_platform-inl.h',
         'src/node_wasi.h',
         'src/node_watchdog.h',
@@ -895,56 +927,64 @@
         } ],
         [ 'node_use_openssl=="true"', {
           'sources': [
+            'src/crypto/crypto_aes.cc',
+            'src/crypto/crypto_bio.cc',
+            'src/crypto/crypto_common.cc',
+            'src/crypto/crypto_dsa.cc',
+            'src/crypto/crypto_hkdf.cc',
+            'src/crypto/crypto_pbkdf2.cc',
+            'src/crypto/crypto_sig.cc',
+            'src/crypto/crypto_timing.cc',
+            'src/crypto/crypto_cipher.cc',
+            'src/crypto/crypto_context.cc',
+            'src/crypto/crypto_ec.cc',
+            'src/crypto/crypto_hmac.cc',
+            'src/crypto/crypto_random.cc',
+            'src/crypto/crypto_rsa.cc',
+            'src/crypto/crypto_spkac.cc',
+            'src/crypto/crypto_util.cc',
+            'src/crypto/crypto_clienthello.cc',
+            'src/crypto/crypto_dh.cc',
+            'src/crypto/crypto_hash.cc',
+            'src/crypto/crypto_keys.cc',
+            'src/crypto/crypto_keygen.cc',
+            'src/crypto/crypto_scrypt.cc',
+            'src/crypto/crypto_tls.cc',
+            'src/crypto/crypto_aes.cc',
+            'src/crypto/crypto_x509.cc',
+            'src/crypto/crypto_bio.h',
+            'src/crypto/crypto_clienthello-inl.h',
+            'src/crypto/crypto_dh.h',
+            'src/crypto/crypto_groups.h',
+            'src/crypto/crypto_hmac.h',
+            'src/crypto/crypto_rsa.h',
+            'src/crypto/crypto_spkac.h',
+            'src/crypto/crypto_util.h',
+            'src/crypto/crypto_cipher.h',
+            'src/crypto/crypto_common.h',
+            'src/crypto/crypto_dsa.h',
+            'src/crypto/crypto_hash.h',
+            'src/crypto/crypto_keys.h',
+            'src/crypto/crypto_keygen.h',
+            'src/crypto/crypto_scrypt.h',
+            'src/crypto/crypto_tls.h',
+            'src/crypto/crypto_clienthello.h',
+            'src/crypto/crypto_context.h',
+            'src/crypto/crypto_ecdh.h',
+            'src/crypto/crypto_hkdf.h',
+            'src/crypto/crypto_pbkdf2.h',
+            'src/crypto/crypto_sig.h',
+            'src/crypto/crypto_random.h',
+            'src/crypto/crypto_timing.h',
+            'src/crypto/crypto_x509.h',
             'src/node_crypto.cc',
-            'src/node_crypto_common.cc',
-            'src/node_crypto_bio.cc',
-            'src/node_crypto_clienthello.cc',
-            'src/node_crypto.h',
-            'src/node_crypto_common.h',
-            'src/node_crypto_bio.h',
-            'src/node_crypto_clienthello.h',
-            'src/node_crypto_clienthello-inl.h',
-            'src/node_crypto_groups.h',
-            'src/tls_wrap.cc',
-            'src/tls_wrap.h'
+            'src/node_crypto.h'
           ],
         }],
-        [ 'OS in "linux freebsd mac" and '
+        [ 'OS in "linux freebsd mac solaris" and '
           'target_arch=="x64" and '
           'node_target_type=="executable"', {
           'defines': [ 'NODE_ENABLE_LARGE_CODE_PAGES=1' ],
-        }],
-        [
-          # We can only use QUIC if using our modified, static linked
-          # OpenSSL because we have patched in the QUIC support.
-          'node_use_openssl=="true" and node_shared_openssl=="false" and experimental_quic==1', {
-          'defines': ['NODE_EXPERIMENTAL_QUIC=1'],
-          'sources': [
-            'src/node_bob.h',
-            'src/node_bob-inl.h',
-            'src/quic/node_quic_buffer.h',
-            'src/quic/node_quic_buffer-inl.h',
-            'src/quic/node_quic_crypto.h',
-            'src/quic/node_quic_session.h',
-            'src/quic/node_quic_session-inl.h',
-            'src/quic/node_quic_socket.h',
-            'src/quic/node_quic_socket-inl.h',
-            'src/quic/node_quic_stream.h',
-            'src/quic/node_quic_stream-inl.h',
-            'src/quic/node_quic_util.h',
-            'src/quic/node_quic_util-inl.h',
-            'src/quic/node_quic_state.h',
-            'src/quic/node_quic_default_application.h',
-            'src/quic/node_quic_http3_application.h',
-            'src/quic/node_quic_buffer.cc',
-            'src/quic/node_quic_crypto.cc',
-            'src/quic/node_quic_session.cc',
-            'src/quic/node_quic_socket.cc',
-            'src/quic/node_quic_stream.cc',
-            'src/quic/node_quic.cc',
-            'src/quic/node_quic_default_application.cc',
-            'src/quic/node_quic_http3_application.cc'
-          ]
         }],
         [ 'use_openssl_def==1', {
           # TODO(bnoordhuis) Make all platforms export the same list of symbols.
@@ -1202,6 +1242,49 @@
         }],
       ],
     }, # fuzz_url
+    { # fuzz_env
+      'target_name': 'fuzz_env',
+      'type': 'executable',
+      'dependencies': [
+        '<(node_lib_target_name)',
+        'deps/histogram/histogram.gyp:histogram',
+        'deps/uvwasi/uvwasi.gyp:uvwasi',
+        'node_dtrace_header',
+        'node_dtrace_ustack',
+        'node_dtrace_provider',
+      ],
+      'includes': [
+        'node.gypi'
+      ],
+      'include_dirs': [
+        'src',
+        'tools/msvs/genfiles',
+        'deps/v8/include',
+        'deps/cares/include',
+        'deps/uv/include',
+        'deps/uvwasi/include',
+        'test/cctest',
+      ],
+      'defines': [
+        'NODE_ARCH="<(target_arch)"',
+        'NODE_PLATFORM="<(OS)"',
+        'NODE_WANT_INTERNALS=1',
+      ],
+      'sources': [
+        'src/node_snapshot_stub.cc',
+        'src/node_code_cache_stub.cc',
+        'test/fuzzers/fuzz_env.cc',
+      ],
+      'conditions': [
+        ['OS=="linux"', {
+          'ldflags': [ '-fsanitize=fuzzer' ]
+        }],
+        # Ensure that ossfuzz flag has been set and that we are on Linux
+        [ 'OS!="linux" or ossfuzz!="true"', {
+          'type': 'none',
+        }],
+      ],
+    }, # fuzz_env
     {
       'target_name': 'cctest',
       'type': 'executable',
@@ -1262,14 +1345,8 @@
           'defines': [
             'HAVE_OPENSSL=1',
           ],
-        }],
-        [ 'node_use_openssl=="true" and experimental_quic==1', {
-          'defines': [
-            'NODE_EXPERIMENTAL_QUIC=1',
-          ],
           'sources': [
-            'test/cctest/test_quic_buffer.cc',
-            'test/cctest/test_quic_cid.cc'
+            'test/cctest/test_node_crypto.cc',
           ]
         }],
         ['v8_enable_inspector==1', {
@@ -1363,6 +1440,24 @@
       ],
     }, # embedtest
 
+    {
+      'target_name': 'overlapped-checker',
+      'type': 'executable',
+
+      'conditions': [
+        ['OS=="win"', {
+          'sources': [
+            'test/overlapped-checker/main_win.c'
+          ],
+        }],
+        ['OS!="win"', {
+          'sources': [
+            'test/overlapped-checker/main_unix.c'
+          ],
+        }],
+      ]
+    }, # overlapped-checker
+
     # TODO(joyeecheung): do not depend on node_lib,
     # instead create a smaller static library node_lib_base that does
     # just enough for node_native_module.cc and the cache builder to
@@ -1407,11 +1502,6 @@
         [ 'node_use_openssl=="true"', {
           'defines': [
             'HAVE_OPENSSL=1',
-          ],
-        }],
-        [ 'node_use_openssl=="true" and experimental_quic==1', {
-          'defines': [
-            'NODE_EXPERIMENTAL_QUIC=1',
           ],
         }],
         ['v8_enable_inspector==1', {
@@ -1466,11 +1556,6 @@
         [ 'node_use_openssl=="true"', {
           'defines': [
             'HAVE_OPENSSL=1',
-          ],
-        }],
-        [ 'node_use_openssl=="true" and experimental_quic==1', {
-          'defines': [
-            'NODE_EXPERIMENTAL_QUIC=1',
           ],
         }],
         ['v8_enable_inspector==1', {

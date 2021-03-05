@@ -216,7 +216,7 @@ PeeledIteration* LoopPeeler::Peel(LoopTree::Loop* loop) {
   //============================================================================
   // Construct the peeled iteration.
   //============================================================================
-  PeeledIterationImpl* iter = new (tmp_zone_) PeeledIterationImpl(tmp_zone_);
+  PeeledIterationImpl* iter = tmp_zone_->New<PeeledIterationImpl>(tmp_zone_);
   size_t estimated_peeled_size = 5 + (loop->TotalSize()) * 2;
   Peeling peeling(graph_, estimated_peeled_size, &iter->node_pairs_);
 
@@ -289,7 +289,7 @@ PeeledIteration* LoopPeeler::Peel(LoopTree::Loop* loop) {
         // Change exit marker to phi.
         exit->InsertInput(graph_->zone(), 1, peeling.map(exit->InputAt(0)));
         NodeProperties::ChangeOp(
-            exit, common_->Phi(MachineRepresentation::kTagged, 2));
+            exit, common_->Phi(LoopExitValueRepresentationOf(exit->op()), 2));
         break;
       case IrOpcode::kLoopExitEffect:
         // Change effect exit marker to effect phi.

@@ -25,7 +25,8 @@ namespace compiler {
 // Temporary information for each node during marking.
 struct NodeInfo {
   Node* node;
-  NodeInfo* next;       // link in chaining loop members
+  NodeInfo* next;  // link in chaining loop members
+  bool backwards_visited;
 };
 
 
@@ -61,7 +62,7 @@ class LoopFinderImpl {
         end_(graph->end()),
         queue_(zone),
         queued_(graph, 2),
-        info_(graph->NodeCount(), {nullptr, nullptr}, zone),
+        info_(graph->NodeCount(), {nullptr, nullptr, false}, zone),
         loops_(zone),
         loop_num_(graph->NodeCount(), -1, zone),
         loop_tree_(loop_tree),
@@ -190,9 +191,9 @@ class LoopFinderImpl {
     Queue(end_);
 
     while (!queue_.empty()) {
-      tick_counter_->DoTick();
+      tick_counter_->TickAndMaybeEnterSafepoint();
       Node* node = queue_.front();
-      info(node);
+      info(node).backwards_visited = true;
       queue_.pop_front();
       queued_.Set(node, false);
 
@@ -224,10 +225,18 @@ class LoopFinderImpl {
         Node* input = node->InputAt(i);
         if (IsBackedge(node, i)) {
           // Only propagate the loop mark on backedges.
-          if (SetBackwardMark(input, loop_num)) Queue(input);
+          if (SetBackwardMark(input, loop_num) ||
+              !info(input).backwards_visited) {
+            Queue(input);
+          }
         } else {
           // Entry or normal edge. Propagate all marks except loop_num.
-          if (PropagateBackwardMarks(node, input, loop_num)) Queue(input);
+          // TODO(manoskouk): Add test that needs backwards_visited to function
+          // correctly, probably using wasm loop unrolling when it is available.
+          if (PropagateBackwardMarks(node, input, loop_num) ||
+              !info(input).backwards_visited) {
+            Queue(input);
+          }
         }
       }
     }
@@ -309,7 +318,7 @@ class LoopFinderImpl {
     }
     // Propagate forward on paths that were backward reachable from backedges.
     while (!queue_.empty()) {
-      tick_counter_->DoTick();
+      tick_counter_->TickAndMaybeEnterSafepoint();
       Node* node = queue_.front();
       queue_.pop_front();
       queued_.Set(node, false);
@@ -524,7 +533,7 @@ class LoopFinderImpl {
 LoopTree* LoopFinder::BuildLoopTree(Graph* graph, TickCounter* tick_counter,
                                     Zone* zone) {
   LoopTree* loop_tree =
-      new (graph->zone()) LoopTree(graph->NodeCount(), graph->zone());
+      graph->zone()->New<LoopTree>(graph->NodeCount(), graph->zone());
   LoopFinderImpl finder(graph, loop_tree, tick_counter, zone);
   finder.Run();
   if (FLAG_trace_turbo_loop) {

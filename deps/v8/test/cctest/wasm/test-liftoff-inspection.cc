@@ -20,7 +20,7 @@ class LiftoffCompileEnvironment {
       : isolate_(CcTest::InitIsolateOnce()),
         handle_scope_(isolate_),
         zone_(isolate_->allocator(), ZONE_NAME),
-        module_builder_(&zone_, nullptr, ExecutionTier::kLiftoff,
+        module_builder_(&zone_, nullptr, TestExecutionTier::kLiftoff,
                         kRuntimeExceptionSupport, kNoLowerSimd) {
     // Add a table of length 1, for indirect calls.
     module_builder_.AddIndirectFunctionTable(nullptr, 1);
@@ -83,7 +83,7 @@ class LiftoffCompileEnvironment {
     if (breakpoints.empty()) {
       std::unique_ptr<DebugSideTable> debug_side_table =
           GenerateLiftoffDebugSideTable(CcTest::i_isolate()->allocator(), &env,
-                                        test_func.body);
+                                        test_func.body, 0);
       CheckTableEquals(*debug_side_table, *debug_side_table_via_compilation);
     }
 
@@ -145,8 +145,8 @@ class LiftoffCompileEnvironment {
     std::copy(return_types.begin(), return_types.end(), storage);
     std::copy(param_types.begin(), param_types.end(),
               storage + return_types.size());
-    FunctionSig* sig = new (&zone_)
-        FunctionSig{return_types.size(), param_types.size(), storage};
+    FunctionSig* sig = zone_.New<FunctionSig>(return_types.size(),
+                                              param_types.size(), storage);
     module_builder_.AddSignature(sig);
     return sig;
   }
@@ -205,7 +205,7 @@ std::ostream& operator<<(std::ostream& out, const DebugSideTableEntry& entry) {
   out << "{";
   const char* comma = "";
   for (auto& v : entry.values) {
-    out << comma << v.type.type_name() << " ";
+    out << comma << v.type.name() << " ";
     switch (v.kind) {
       case DebugSideTable::Entry::kConstant:
         out << "const:" << v.i32_const;
@@ -267,44 +267,44 @@ TEST(Liftoff_deterministic_simple) {
   LiftoffCompileEnvironment env;
   env.CheckDeterministicCompilation(
       {kWasmI32}, {kWasmI32, kWasmI32},
-      {WASM_I32_ADD(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1))});
+      {WASM_I32_ADD(WASM_LOCAL_GET(0), WASM_LOCAL_GET(1))});
 }
 
 TEST(Liftoff_deterministic_call) {
   LiftoffCompileEnvironment env;
   env.CheckDeterministicCompilation(
       {kWasmI32}, {kWasmI32},
-      {WASM_I32_ADD(WASM_CALL_FUNCTION(0, WASM_GET_LOCAL(0)),
-                    WASM_GET_LOCAL(0))});
+      {WASM_I32_ADD(WASM_CALL_FUNCTION(0, WASM_LOCAL_GET(0)),
+                    WASM_LOCAL_GET(0))});
 }
 
 TEST(Liftoff_deterministic_indirect_call) {
   LiftoffCompileEnvironment env;
   env.CheckDeterministicCompilation(
       {kWasmI32}, {kWasmI32},
-      {WASM_I32_ADD(WASM_CALL_INDIRECT(0, WASM_GET_LOCAL(0), WASM_I32V_1(47)),
-                    WASM_GET_LOCAL(0))});
+      {WASM_I32_ADD(WASM_CALL_INDIRECT(0, WASM_LOCAL_GET(0), WASM_I32V_1(47)),
+                    WASM_LOCAL_GET(0))});
 }
 
 TEST(Liftoff_deterministic_loop) {
   LiftoffCompileEnvironment env;
   env.CheckDeterministicCompilation(
       {kWasmI32}, {kWasmI32},
-      {WASM_LOOP(WASM_BR_IF(0, WASM_GET_LOCAL(0))), WASM_GET_LOCAL(0)});
+      {WASM_LOOP(WASM_BR_IF(0, WASM_LOCAL_GET(0))), WASM_LOCAL_GET(0)});
 }
 
 TEST(Liftoff_deterministic_trap) {
   LiftoffCompileEnvironment env;
   env.CheckDeterministicCompilation(
       {kWasmI32}, {kWasmI32, kWasmI32},
-      {WASM_I32_DIVS(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1))});
+      {WASM_I32_DIVS(WASM_LOCAL_GET(0), WASM_LOCAL_GET(1))});
 }
 
 TEST(Liftoff_debug_side_table_simple) {
   LiftoffCompileEnvironment env;
   auto debug_side_table = env.GenerateDebugSideTable(
       {kWasmI32}, {kWasmI32, kWasmI32},
-      {WASM_I32_ADD(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1))});
+      {WASM_I32_ADD(WASM_LOCAL_GET(0), WASM_LOCAL_GET(1))});
   CheckDebugSideTable(
       {
           // function entry, locals in registers.
@@ -319,8 +319,8 @@ TEST(Liftoff_debug_side_table_call) {
   LiftoffCompileEnvironment env;
   auto debug_side_table = env.GenerateDebugSideTable(
       {kWasmI32}, {kWasmI32},
-      {WASM_I32_ADD(WASM_CALL_FUNCTION(0, WASM_GET_LOCAL(0)),
-                    WASM_GET_LOCAL(0))});
+      {WASM_I32_ADD(WASM_CALL_FUNCTION(0, WASM_LOCAL_GET(0)),
+                    WASM_LOCAL_GET(0))});
   CheckDebugSideTable(
       {
           // function entry, local in register.
@@ -338,9 +338,9 @@ TEST(Liftoff_debug_side_table_call_const) {
   constexpr int kConst = 13;
   auto debug_side_table = env.GenerateDebugSideTable(
       {kWasmI32}, {kWasmI32},
-      {WASM_SET_LOCAL(0, WASM_I32V_1(kConst)),
-       WASM_I32_ADD(WASM_CALL_FUNCTION(0, WASM_GET_LOCAL(0)),
-                    WASM_GET_LOCAL(0))});
+      {WASM_LOCAL_SET(0, WASM_I32V_1(kConst)),
+       WASM_I32_ADD(WASM_CALL_FUNCTION(0, WASM_LOCAL_GET(0)),
+                    WASM_LOCAL_GET(0))});
   CheckDebugSideTable(
       {
           // function entry, local in register.
@@ -358,8 +358,8 @@ TEST(Liftoff_debug_side_table_indirect_call) {
   constexpr int kConst = 47;
   auto debug_side_table = env.GenerateDebugSideTable(
       {kWasmI32}, {kWasmI32},
-      {WASM_I32_ADD(WASM_CALL_INDIRECT(0, WASM_I32V_1(47), WASM_GET_LOCAL(0)),
-                    WASM_GET_LOCAL(0))});
+      {WASM_I32_ADD(WASM_CALL_INDIRECT(0, WASM_I32V_1(47), WASM_LOCAL_GET(0)),
+                    WASM_LOCAL_GET(0))});
   CheckDebugSideTable(
       {
           // function entry, local in register.
@@ -381,7 +381,7 @@ TEST(Liftoff_debug_side_table_loop) {
   constexpr int kConst = 42;
   auto debug_side_table = env.GenerateDebugSideTable(
       {kWasmI32}, {kWasmI32},
-      {WASM_I32V_1(kConst), WASM_LOOP(WASM_BR_IF(0, WASM_GET_LOCAL(0)))});
+      {WASM_I32V_1(kConst), WASM_LOOP(WASM_BR_IF(0, WASM_LOCAL_GET(0)))});
   CheckDebugSideTable(
       {
           // function entry, local in register.
@@ -398,7 +398,7 @@ TEST(Liftoff_debug_side_table_trap) {
   LiftoffCompileEnvironment env;
   auto debug_side_table = env.GenerateDebugSideTable(
       {kWasmI32}, {kWasmI32, kWasmI32},
-      {WASM_I32_DIVS(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1))});
+      {WASM_I32_DIVS(WASM_LOCAL_GET(0), WASM_LOCAL_GET(1))});
   CheckDebugSideTable(
       {
           // function entry, locals in registers.
@@ -418,7 +418,7 @@ TEST(Liftoff_breakpoint_simple) {
   // Set two breakpoints. At both locations, values are live in registers.
   auto debug_side_table = env.GenerateDebugSideTable(
       {kWasmI32}, {kWasmI32, kWasmI32},
-      {WASM_I32_ADD(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1))},
+      {WASM_I32_ADD(WASM_LOCAL_GET(0), WASM_LOCAL_GET(1))},
       {
           1,  // break at beginning of function (first local.get)
           5   // break at i32.add

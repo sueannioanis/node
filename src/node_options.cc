@@ -7,6 +7,8 @@
 
 #include <errno.h>
 #include <sstream>
+#include <limits>
+#include <algorithm>
 #include <cstdlib>  // strtoul, errno
 
 using v8::Boolean;
@@ -64,6 +66,20 @@ void PerProcessOptions::CheckOptions(std::vector<std::string>* errors) {
     errors->push_back("either --use-openssl-ca or --use-bundled-ca can be "
                       "used, not both");
   }
+
+  // Any value less than 2 disables use of the secure heap.
+  if (secure_heap >= 2) {
+    if ((secure_heap & (secure_heap - 1)) != 0)
+      errors->push_back("--secure-heap must be a power of 2");
+    secure_heap_min =
+        std::min({
+            secure_heap,
+            secure_heap_min,
+            static_cast<int64_t>(std::numeric_limits<int>::max())});
+    secure_heap_min = std::max(static_cast<int64_t>(2), secure_heap_min);
+    if ((secure_heap_min & (secure_heap_min - 1)) != 0)
+      errors->push_back("--secure-heap-min must be a power of 2");
+  }
 #endif
   if (use_largepages != "off" &&
       use_largepages != "on" &&
@@ -116,6 +132,10 @@ void EnvironmentOptions::CheckOptions(std::vector<std::string>* errors) {
   if (tls_min_v1_3 && tls_max_v1_2) {
     errors->push_back("either --tls-min-v1.3 or --tls-max-v1.2 can be "
                       "used, not both");
+  }
+
+  if (heap_snapshot_near_heap_limit < 0) {
+    errors->push_back("--heap-snapshot-near-heap-limit must not be negative");
   }
 
 #if HAVE_INSPECTOR
@@ -341,6 +361,12 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             "Generate heap snapshot on specified signal",
             &EnvironmentOptions::heap_snapshot_signal,
             kAllowedInEnvironment);
+  AddOption("--heapsnapshot-near-heap-limit",
+            "Generate heap snapshots whenever V8 is approaching "
+            "the heap limit. No more than the specified number of "
+            "heap snapshots will be generated.",
+            &EnvironmentOptions::heap_snapshot_near_heap_limit,
+            kAllowedInEnvironment);
   AddOption("--http-parser", "", NoOp{}, kAllowedInEnvironment);
   AddOption("--insecure-http-parser",
             "use an insecure HTTP parser that accepts invalid HTTP headers",
@@ -385,6 +411,9 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             "preserve symbolic links when resolving the main module",
             &EnvironmentOptions::preserve_symlinks_main,
             kAllowedInEnvironment);
+  AddOption("--prof",
+            "Generate V8 profiler output.",
+            V8Option{});
   AddOption("--prof-process",
             "process V8 profiler output generated using --prof",
             &EnvironmentOptions::prof_process);
@@ -474,6 +503,10 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             "define unhandled rejections behavior. Options are 'strict' (raise "
             "an error), 'warn' (enforce warnings) or 'none' (silence warnings)",
             &EnvironmentOptions::unhandled_rejections,
+            kAllowedInEnvironment);
+  AddOption("--verify-base-objects",
+            "", /* undocumented, only for debugging */
+            &EnvironmentOptions::verify_base_objects,
             kAllowedInEnvironment);
 
   AddOption("--check",
@@ -733,7 +766,6 @@ PerProcessOptionsParser::PerProcessOptionsParser(
             &PerProcessOptions::ssl_openssl_cert_store);
   Implies("--use-openssl-ca", "[ssl_openssl_cert_store]");
   ImpliesNot("--use-bundled-ca", "[ssl_openssl_cert_store]");
-#if NODE_FIPS_MODE
   AddOption("--enable-fips",
             "enable FIPS crypto at startup",
             &PerProcessOptions::enable_fips_crypto,
@@ -742,7 +774,14 @@ PerProcessOptionsParser::PerProcessOptionsParser(
             "force FIPS crypto (cannot be disabled)",
             &PerProcessOptions::force_fips_crypto,
             kAllowedInEnvironment);
-#endif
+  AddOption("--secure-heap",
+            "total size of the OpenSSL secure heap",
+            &PerProcessOptions::secure_heap,
+            kAllowedInEnvironment);
+  AddOption("--secure-heap-min",
+            "minimum allocation size from the OpenSSL secure heap",
+            &PerProcessOptions::secure_heap_min,
+            kAllowedInEnvironment);
 #endif
   AddOption("--use-largepages",
             "Map the Node.js static code to large pages. Options are "
@@ -758,6 +797,12 @@ PerProcessOptionsParser::PerProcessOptionsParser(
             kAllowedInEnvironment);
 
   Insert(iop, &PerProcessOptions::get_per_isolate_options);
+
+  AddOption("--node-memory-debug",
+            "Run with extra debug checks for memory leaks in Node.js itself",
+            NoOp{}, kAllowedInEnvironment);
+  Implies("--node-memory-debug", "--debug-arraybuffer-allocations");
+  Implies("--node-memory-debug", "--verify-base-objects");
 }
 
 inline std::string RemoveBrackets(const std::string& host) {
@@ -870,6 +915,12 @@ void GetOptions(const FunctionCallbackInfo<Value>& args) {
   });
 
   Local<Map> options = Map::New(isolate);
+  if (options
+          ->SetPrototype(context, env->primordials_safe_map_prototype_object())
+          .IsNothing()) {
+    return;
+  }
+
   for (const auto& item : _ppop_instance.options_) {
     Local<Value> value;
     const auto& option_info = item.second;
@@ -892,12 +943,14 @@ void GetOptions(const FunctionCallbackInfo<Value>& args) {
                              *_ppop_instance.Lookup<bool>(field, opts));
         break;
       case kInteger:
-        value = Number::New(isolate,
-                            *_ppop_instance.Lookup<int64_t>(field, opts));
+        value = Number::New(
+            isolate,
+            static_cast<double>(*_ppop_instance.Lookup<int64_t>(field, opts)));
         break;
       case kUInteger:
-        value = Number::New(isolate,
-                            *_ppop_instance.Lookup<uint64_t>(field, opts));
+        value = Number::New(
+            isolate,
+            static_cast<double>(*_ppop_instance.Lookup<uint64_t>(field, opts)));
         break;
       case kString:
         if (!ToV8Value(context,
@@ -957,6 +1010,12 @@ void GetOptions(const FunctionCallbackInfo<Value>& args) {
 
   Local<Value> aliases;
   if (!ToV8Value(context, _ppop_instance.aliases_).ToLocal(&aliases)) return;
+
+  if (aliases.As<Object>()
+          ->SetPrototype(context, env->primordials_safe_map_prototype_object())
+          .IsNothing()) {
+    return;
+  }
 
   Local<Object> ret = Object::New(isolate);
   if (ret->Set(context, env->options_string(), options).IsNothing() ||

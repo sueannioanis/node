@@ -1,15 +1,7 @@
-module.exports = prefix
-
-var npm = require('./npm.js')
-var output = require('./utils/output.js')
-
-prefix.usage = 'npm prefix [-g]'
-
-function prefix (args, silent, cb) {
-  if (typeof cb !== 'function') {
-    cb = silent
-    silent = false
-  }
-  if (!silent) output(npm.prefix)
-  process.nextTick(cb.bind(this, null, npm.prefix))
-}
+const npm = require('./npm.js')
+const output = require('./utils/output.js')
+const usageUtil = require('./utils/usage.js')
+const cmd = (args, cb) => prefix(args).then(() => cb()).catch(cb)
+const usage = usageUtil('prefix', 'npm prefix [-g]')
+const prefix = async (args, cb) => output(npm.prefix)
+module.exports = Object.assign(cmd, { usage })
