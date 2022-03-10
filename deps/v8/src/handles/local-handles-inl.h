@@ -5,10 +5,10 @@
 #ifndef V8_HANDLES_LOCAL_HANDLES_INL_H_
 #define V8_HANDLES_LOCAL_HANDLES_INL_H_
 
+#include "src/base/sanitizer/msan.h"
 #include "src/execution/isolate.h"
 #include "src/execution/local-isolate.h"
 #include "src/handles/local-handles.h"
-#include "src/sanitizer/msan.h"
 
 namespace v8 {
 namespace internal {
@@ -34,6 +34,8 @@ LocalHandleScope::LocalHandleScope(LocalIsolate* local_isolate)
     : LocalHandleScope(local_isolate->heap()) {}
 
 LocalHandleScope::LocalHandleScope(LocalHeap* local_heap) {
+  DCHECK(local_heap->IsRunning());
+
   if (local_heap->is_main_thread()) {
     OpenMainThreadScope(local_heap);
   } else {

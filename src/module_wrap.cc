@@ -5,7 +5,7 @@
 #include "node_contextify.h"
 #include "node_errors.h"
 #include "node_internals.h"
-#include "node_process.h"
+#include "node_process-inl.h"
 #include "node_url.h"
 #include "node_watchdog.h"
 #include "util-inl.h"
@@ -46,7 +46,6 @@ using v8::PrimitiveArray;
 using v8::Promise;
 using v8::ScriptCompiler;
 using v8::ScriptOrigin;
-using v8::ScriptOrModule;
 using v8::String;
 using v8::UnboundModuleScript;
 using v8::Undefined;
@@ -83,7 +82,7 @@ ModuleWrap::~ModuleWrap() {
 Local<Context> ModuleWrap::context() const {
   Local<Value> obj = object()->GetInternalField(kContextObjectSlot);
   if (obj.IsEmpty()) return {};
-  return obj.As<Object>()->CreationContext();
+  return obj.As<Object>()->GetCreationContext().ToLocalChecked();
 }
 
 ModuleWrap* ModuleWrap::GetFromModule(Environment* env,
@@ -122,7 +121,7 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
   Local<Context> context;
   ContextifyContext* contextify_context = nullptr;
   if (args[1]->IsUndefined()) {
-    context = that->CreationContext();
+    context = that->GetCreationContext().ToLocalChecked();
   } else {
     CHECK(args[1]->IsObject());
     contextify_context = ContextifyContext::ContextFromContextifiedSandbox(
@@ -187,7 +186,8 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
       }
 
       Local<String> source_text = args[2].As<String>();
-      ScriptOrigin origin(url,
+      ScriptOrigin origin(isolate,
+                          url,
                           line_offset,
                           column_offset,
                           true,                             // is cross origin
@@ -236,7 +236,7 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
     obj->object()->SetInternalField(kSyntheticEvaluationStepsSlot, args[3]);
   }
 
-  // Use the extras object as an object whose CreationContext() will be the
+  // Use the extras object as an object whose GetCreationContext() will be the
   // original `context`, since the `Context` itself strictly speaking cannot
   // be stored in an internal field.
   obj->object()->SetInternalField(kContextObjectSlot,
@@ -250,6 +250,21 @@ void ModuleWrap::New(const FunctionCallbackInfo<Value>& args) {
 
   that->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
   args.GetReturnValue().Set(that);
+}
+
+static Local<Object> createImportAssertionContainer(Environment* env,
+  Isolate* isolate, Local<FixedArray> raw_assertions) {
+  Local<Object> assertions =
+        Object::New(isolate, v8::Null(env->isolate()), nullptr, nullptr, 0);
+  for (int i = 0; i < raw_assertions->Length(); i += 3) {
+      assertions
+          ->Set(env->context(),
+                raw_assertions->Get(env->context(), i).As<String>(),
+                raw_assertions->Get(env->context(), i + 1).As<Value>())
+          .ToChecked();
+  }
+
+  return assertions;
 }
 
 void ModuleWrap::Link(const FunctionCallbackInfo<Value>& args) {
@@ -285,8 +300,13 @@ void ModuleWrap::Link(const FunctionCallbackInfo<Value>& args) {
     Utf8Value specifier_utf8(env->isolate(), specifier);
     std::string specifier_std(*specifier_utf8, specifier_utf8.length());
 
+    Local<FixedArray> raw_assertions = module_request->GetImportAssertions();
+    Local<Object> assertions =
+      createImportAssertionContainer(env, isolate, raw_assertions);
+
     Local<Value> argv[] = {
-      specifier
+        specifier,
+        assertions,
     };
 
     MaybeLocal<Value> maybe_resolve_return_value =
@@ -297,7 +317,9 @@ void ModuleWrap::Link(const FunctionCallbackInfo<Value>& args) {
     Local<Value> resolve_return_value =
         maybe_resolve_return_value.ToLocalChecked();
     if (!resolve_return_value->IsPromise()) {
-      env->ThrowError("linking error, expected resolver to return a promise");
+      THROW_ERR_VM_MODULE_LINK_FAILURE(
+          env, "request for '%s' did not return promise", specifier_std);
+      return;
     }
     Local<Promise> resolve_promise = resolve_return_value.As<Promise>();
     obj->resolve_cache_[specifier_std].Reset(env->isolate(), resolve_promise);
@@ -497,17 +519,19 @@ MaybeLocal<Module> ModuleWrap::ResolveModuleCallback(
 
   Isolate* isolate = env->isolate();
 
-  ModuleWrap* dependent = GetFromModule(env, referrer);
-  if (dependent == nullptr) {
-    env->ThrowError("linking error, null dep");
-    return MaybeLocal<Module>();
-  }
-
   Utf8Value specifier_utf8(isolate, specifier);
   std::string specifier_std(*specifier_utf8, specifier_utf8.length());
 
+  ModuleWrap* dependent = GetFromModule(env, referrer);
+  if (dependent == nullptr) {
+    THROW_ERR_VM_MODULE_LINK_FAILURE(
+        env, "request for '%s' is from invalid module", specifier_std);
+    return MaybeLocal<Module>();
+  }
+
   if (dependent->resolve_cache_.count(specifier_std) != 1) {
-    env->ThrowError("linking error, not in local cache");
+    THROW_ERR_VM_MODULE_LINK_FAILURE(
+        env, "request for '%s' is not in cache", specifier_std);
     return MaybeLocal<Module>();
   }
 
@@ -515,15 +539,15 @@ MaybeLocal<Module> ModuleWrap::ResolveModuleCallback(
       dependent->resolve_cache_[specifier_std].Get(isolate);
 
   if (resolve_promise->State() != Promise::kFulfilled) {
-    env->ThrowError("linking error, dependency promises must be resolved on "
-                    "instantiate");
+    THROW_ERR_VM_MODULE_LINK_FAILURE(
+        env, "request for '%s' is not yet fulfilled", specifier_std);
     return MaybeLocal<Module>();
   }
 
   Local<Object> module_object = resolve_promise->Result().As<Object>();
   if (module_object.IsEmpty() || !module_object->IsObject()) {
-    env->ThrowError("linking error, expected a valid module object from "
-                    "resolver");
+    THROW_ERR_VM_MODULE_LINK_FAILURE(
+        env, "request for '%s' did not return an object", specifier_std);
     return MaybeLocal<Module>();
   }
 
@@ -534,8 +558,10 @@ MaybeLocal<Module> ModuleWrap::ResolveModuleCallback(
 
 static MaybeLocal<Promise> ImportModuleDynamically(
     Local<Context> context,
-    Local<ScriptOrModule> referrer,
-    Local<String> specifier) {
+    Local<v8::Data> host_defined_options,
+    Local<Value> resource_name,
+    Local<String> specifier,
+    Local<FixedArray> import_assertions) {
   Isolate* isolate = context->GetIsolate();
   Environment* env = Environment::GetCurrent(context);
   if (env == nullptr) {
@@ -548,7 +574,7 @@ static MaybeLocal<Promise> ImportModuleDynamically(
   Local<Function> import_callback =
     env->host_import_module_dynamically_callback();
 
-  Local<PrimitiveArray> options = referrer->GetHostDefinedOptions();
+  Local<FixedArray> options = host_defined_options.As<FixedArray>();
   if (options->Length() != HostDefinedOptions::kLength) {
     Local<Promise::Resolver> resolver;
     if (!Promise::Resolver::New(context).ToLocal(&resolver)) return {};
@@ -562,11 +588,11 @@ static MaybeLocal<Promise> ImportModuleDynamically(
 
   Local<Value> object;
 
-  int type = options->Get(isolate, HostDefinedOptions::kType)
+  int type = options->Get(context, HostDefinedOptions::kType)
                  .As<Number>()
                  ->Int32Value(context)
                  .ToChecked();
-  uint32_t id = options->Get(isolate, HostDefinedOptions::kID)
+  uint32_t id = options->Get(context, HostDefinedOptions::kID)
                     .As<Number>()
                     ->Uint32Value(context)
                     .ToChecked();
@@ -584,9 +610,13 @@ static MaybeLocal<Promise> ImportModuleDynamically(
     UNREACHABLE();
   }
 
+  Local<Object> assertions =
+    createImportAssertionContainer(env, isolate, import_assertions);
+
   Local<Value> import_args[] = {
     object,
     Local<Value>(specifier),
+    assertions,
   };
 
   Local<Value> result;

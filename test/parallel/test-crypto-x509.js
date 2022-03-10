@@ -46,9 +46,10 @@ OU=Node.js
 CN=ca1
 emailAddress=ry@tinyclouds.org`;
 
-const infoAccessCheck = `OCSP - URI:http://ocsp.nodejs.org/
-CA Issuers - URI:http://ca.nodejs.org/ca.cert
-`;
+let infoAccessCheck = `OCSP - URI:http://ocsp.nodejs.org/
+CA Issuers - URI:http://ca.nodejs.org/ca.cert`;
+if (!common.hasOpenSSL3)
+  infoAccessCheck += '\n';
 
 const der = Buffer.from(
   '308202d830820241a003020102020900ecc9b856270da9a830' +
@@ -102,6 +103,12 @@ const der = Buffer.from(
     'B0:BE:46:49:B8:29:63:E0:6F:63:C8:8A:57:9C:3F:9B:72:C6:F5:89:E3:0D:' +
     '84:AC:5B:08:9A:20:89:B6:8F:D6'
   );
+  assert.strictEqual(
+    x509.fingerprint512,
+    'D0:05:01:82:2C:D8:09:BE:27:94:E7:83:F1:88:BC:7A:8B:D0:39:97:54:B6:' +
+    'D0:B4:46:5B:DE:13:5B:68:86:B6:F2:A8:95:22:D5:6E:8B:35:DA:89:29:CA:' +
+    'A3:06:C5:CE:43:C1:7F:2D:7E:5F:44:A5:EE:A3:CB:97:05:A3:E3:68'
+  );
   assert.strictEqual(x509.keyUsage, undefined);
   assert.strictEqual(x509.serialNumber, 'ECC9B856270DA9A8');
 
@@ -110,7 +117,8 @@ const der = Buffer.from(
   assert(x509.publicKey);
   assert.strictEqual(x509.publicKey.type, 'public');
 
-  assert.strictEqual(x509.toString().replaceAll('\r\n', '\n'), cert.toString());
+  assert.strictEqual(x509.toString().replaceAll('\r\n', '\n'),
+                     cert.toString().replaceAll('\r\n', '\n'));
   assert.strictEqual(x509.toJSON(), x509.toString());
 
   assert(x509.checkPrivateKey(privateKey));
@@ -147,7 +155,7 @@ const der = Buffer.from(
     'wildcards',
     'partialWildcards',
     'multiLabelWildcards',
-    'singleLabelSubdomains'
+    'singleLabelSubdomains',
   ].forEach((key) => {
     [1, '', null, {}].forEach((i) => {
       assert.throws(() => x509.checkHost('agent1', { [key]: i }), {
@@ -190,24 +198,28 @@ const der = Buffer.from(
 
   // Verify that legacy encoding works
   const legacyObjectCheck = {
-    subject: 'C=US\n' +
-      'ST=CA\n' +
-      'L=SF\n' +
-      'O=Joyent\n' +
-      'OU=Node.js\n' +
-      'CN=agent1\n' +
-      'emailAddress=ry@tinyclouds.org',
-    issuer:
-      'C=US\n' +
-      'ST=CA\n' +
-      'L=SF\n' +
-      'O=Joyent\n' +
-      'OU=Node.js\n' +
-      'CN=ca1\n' +
-      'emailAddress=ry@tinyclouds.org',
-    infoAccess:
-      'OCSP - URI:http://ocsp.nodejs.org/\n' +
-      'CA Issuers - URI:http://ca.nodejs.org/ca.cert\n',
+    subject: Object.assign(Object.create(null), {
+      C: 'US',
+      ST: 'CA',
+      L: 'SF',
+      O: 'Joyent',
+      OU: 'Node.js',
+      CN: 'agent1',
+      emailAddress: 'ry@tinyclouds.org',
+    }),
+    issuer: Object.assign(Object.create(null), {
+      C: 'US',
+      ST: 'CA',
+      L: 'SF',
+      O: 'Joyent',
+      OU: 'Node.js',
+      CN: 'ca1',
+      emailAddress: 'ry@tinyclouds.org',
+    }),
+    infoAccess: Object.assign(Object.create(null), {
+      'OCSP - URI': ['http://ocsp.nodejs.org/'],
+      'CA Issuers - URI': ['http://ca.nodejs.org/ca.cert']
+    }),
     modulus: 'EF5440701637E28ABB038E5641F828D834C342A9D25EDBB86A2BF' +
              '6FBD809CB8E037A98B71708E001242E4DEB54C6164885F599DD87' +
              'A23215745955BE20417E33C4D0D1B80C9DA3DE419A2607195D2FB' +
@@ -221,15 +233,20 @@ const der = Buffer.from(
     fingerprint256:
       'B0:BE:46:49:B8:29:63:E0:6F:63:C8:8A:57:9C:3F:9B:72:' +
       'C6:F5:89:E3:0D:84:AC:5B:08:9A:20:89:B6:8F:D6',
+    fingerprint512:
+      'D0:05:01:82:2C:D8:09:BE:27:94:E7:83:F1:88:BC:7A:8B:' +
+      'D0:39:97:54:B6:D0:B4:46:5B:DE:13:5B:68:86:B6:F2:A8:' +
+      '95:22:D5:6E:8B:35:DA:89:29:CA:A3:06:C5:CE:43:C1:7F:' +
+      '2D:7E:5F:44:A5:EE:A3:CB:97:05:A3:E3:68',
     serialNumber: 'ECC9B856270DA9A8'
   };
 
   const legacyObject = x509.toLegacyObject();
 
   assert.deepStrictEqual(legacyObject.raw, x509.raw);
-  assert.strictEqual(legacyObject.subject, legacyObjectCheck.subject);
-  assert.strictEqual(legacyObject.issuer, legacyObjectCheck.issuer);
-  assert.strictEqual(legacyObject.infoAccess, legacyObjectCheck.infoAccess);
+  assert.deepStrictEqual(legacyObject.subject, legacyObjectCheck.subject);
+  assert.deepStrictEqual(legacyObject.issuer, legacyObjectCheck.issuer);
+  assert.deepStrictEqual(legacyObject.infoAccess, legacyObjectCheck.infoAccess);
   assert.strictEqual(legacyObject.modulus, legacyObjectCheck.modulus);
   assert.strictEqual(legacyObject.bits, legacyObjectCheck.bits);
   assert.strictEqual(legacyObject.exponent, legacyObjectCheck.exponent);

@@ -150,9 +150,7 @@ class WorkerThreadData {
 
     Isolate* isolate = Isolate::Allocate();
     if (isolate == nullptr) {
-      // TODO(addaleax): This should be ERR_WORKER_INIT_FAILED,
-      // ERR_WORKER_OUT_OF_MEMORY is for reaching the per-Worker heap limit.
-      w->Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "Failed to create new Isolate");
+      w->Exit(1, "ERR_WORKER_INIT_FAILED", "Failed to create new Isolate");
       return;
     }
 
@@ -298,9 +296,7 @@ void Worker::Run() {
         TryCatch try_catch(isolate_);
         context = NewContext(isolate_);
         if (context.IsEmpty()) {
-          // TODO(addaleax): This should be ERR_WORKER_INIT_FAILED,
-          // ERR_WORKER_OUT_OF_MEMORY is for reaching the per-Worker heap limit.
-          Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "Failed to create new Context");
+          Exit(1, "ERR_WORKER_INIT_FAILED", "Failed to create new Context");
           return;
         }
       }
@@ -332,7 +328,10 @@ void Worker::Run() {
       Debug(this, "Created Environment for worker with id %llu", thread_id_.id);
       if (is_stopped()) return;
       {
-        CreateEnvMessagePort(env_.get());
+        if (!CreateEnvMessagePort(env_.get())) {
+          return;
+        }
+
         Debug(this, "Created message port for worker %llu", thread_id_.id);
         if (LoadEnvironment(env_.get(), StartExecutionCallback{}).IsEmpty())
           return;
@@ -356,24 +355,31 @@ void Worker::Run() {
   Debug(this, "Worker %llu thread stops", thread_id_.id);
 }
 
-void Worker::CreateEnvMessagePort(Environment* env) {
+bool Worker::CreateEnvMessagePort(Environment* env) {
   HandleScope handle_scope(isolate_);
-  Mutex::ScopedLock lock(mutex_);
+  std::unique_ptr<MessagePortData> data;
+  {
+    Mutex::ScopedLock lock(mutex_);
+    data = std::move(child_port_data_);
+  }
+
   // Set up the message channel for receiving messages in the child.
   MessagePort* child_port = MessagePort::New(env,
                                              env->context(),
-                                             std::move(child_port_data_));
+                                             std::move(data));
   // MessagePort::New() may return nullptr if execution is terminated
   // within it.
   if (child_port != nullptr)
     env->set_message_port(child_port->object(isolate_));
+
+  return child_port;
 }
 
 void Worker::JoinThread() {
-  if (thread_joined_)
+  if (!tid_.has_value())
     return;
-  CHECK_EQ(uv_thread_join(&tid_), 0);
-  thread_joined_ = true;
+  CHECK_EQ(uv_thread_join(&tid_.value()), 0);
+  tid_.reset();
 
   env()->remove_sub_worker_context(this);
 
@@ -400,7 +406,7 @@ void Worker::JoinThread() {
     MakeCallback(env()->onexit_string(), arraysize(args), args);
   }
 
-  // If we get here, the !thread_joined_ condition at the top of the function
+  // If we get here, the tid_.has_value() condition at the top of the function
   // implies that the thread was running. In that case, its final action will
   // be to schedule a callback on the parent thread which will delete this
   // object, so there's nothing more to do here.
@@ -411,7 +417,7 @@ Worker::~Worker() {
 
   CHECK(stopped_);
   CHECK_NULL(env_);
-  CHECK(thread_joined_);
+  CHECK(!tid_.has_value());
 
   Debug(this, "Worker %llu destroyed", thread_id_.id);
 }
@@ -491,7 +497,7 @@ void Worker::New(const FunctionCallbackInfo<Value>& args) {
         return;
       }
     }
-#endif
+#endif  // NODE_WITHOUT_NODE_OPTIONS
   }
 
   if (args[2]->IsArray()) {
@@ -562,6 +568,14 @@ void Worker::New(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[4]->IsBoolean());
   if (args[4]->IsTrue() || env->tracks_unmanaged_fds())
     worker->environment_flags_ |= EnvironmentFlags::kTrackUnmanagedFds;
+  if (env->hide_console_windows())
+    worker->environment_flags_ |= EnvironmentFlags::kHideConsoleWindows;
+  if (env->no_native_addons())
+    worker->environment_flags_ |= EnvironmentFlags::kNoNativeAddons;
+  if (env->no_global_search_paths())
+    worker->environment_flags_ |= EnvironmentFlags::kNoGlobalSearchPaths;
+  if (env->no_browser_globals())
+    worker->environment_flags_ |= EnvironmentFlags::kNoBrowserGlobals;
 }
 
 void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
@@ -586,7 +600,9 @@ void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
   uv_thread_options_t thread_options;
   thread_options.flags = UV_THREAD_HAS_STACK_SIZE;
   thread_options.stack_size = w->stack_size_;
-  int ret = uv_thread_create_ex(&w->tid_, &thread_options, [](void* arg) {
+
+  uv_thread_t* tid = &w->tid_.emplace();  // Create uv_thread_t instance
+  int ret = uv_thread_create_ex(tid, &thread_options, [](void* arg) {
     // XXX: This could become a std::unique_ptr, but that makes at least
     // gcc 6.3 detect undefined behaviour when there shouldn't be any.
     // gcc 7+ handles this well.
@@ -613,7 +629,6 @@ void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
     // The object now owns the created thread and should not be garbage
     // collected until that finishes.
     w->ClearWeak();
-    w->thread_joined_ = false;
 
     if (w->has_ref_)
       w->env()->add_refs(1);
@@ -621,6 +636,7 @@ void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
     w->env()->add_sub_worker_context(w);
   } else {
     w->stopped_ = true;
+    w->tid_.reset();
 
     char err_buf[128];
     uv_err_name_r(ret, err_buf, sizeof(err_buf));
@@ -643,7 +659,7 @@ void Worker::StopThread(const FunctionCallbackInfo<Value>& args) {
 void Worker::Ref(const FunctionCallbackInfo<Value>& args) {
   Worker* w;
   ASSIGN_OR_RETURN_UNWRAP(&w, args.This());
-  if (!w->has_ref_ && !w->thread_joined_) {
+  if (!w->has_ref_ && w->tid_.has_value()) {
     w->has_ref_ = true;
     w->env()->add_refs(1);
   }
@@ -652,7 +668,7 @@ void Worker::Ref(const FunctionCallbackInfo<Value>& args) {
 void Worker::Unref(const FunctionCallbackInfo<Value>& args) {
   Worker* w;
   ASSIGN_OR_RETURN_UNWRAP(&w, args.This());
-  if (w->has_ref_ && !w->thread_joined_) {
+  if (w->has_ref_ && w->tid_.has_value()) {
     w->has_ref_ = false;
     w->env()->add_refs(-1);
   }
@@ -790,7 +806,8 @@ void GetEnvMessagePort(const FunctionCallbackInfo<Value>& args) {
   Local<Object> port = env->message_port();
   CHECK_IMPLIES(!env->is_main_thread(), !port.IsEmpty());
   if (!port.IsEmpty()) {
-    CHECK_EQ(port->CreationContext()->GetIsolate(), args.GetIsolate());
+    CHECK_EQ(port->GetCreationContext().ToLocalChecked()->GetIsolate(),
+             args.GetIsolate());
     args.GetReturnValue().Set(port);
   }
 }

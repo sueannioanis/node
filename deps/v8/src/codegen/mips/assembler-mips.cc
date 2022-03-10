@@ -67,6 +67,8 @@ static unsigned CpuFeaturesImpliedByCompiler() {
   return answer;
 }
 
+bool CpuFeatures::SupportsWasmSimd128() { return IsSupported(MIPS_SIMD); }
+
 void CpuFeatures::ProbeImpl(bool cross_compile) {
   supported_ |= CpuFeaturesImpliedByCompiler();
 
@@ -115,6 +117,12 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   }
 #endif
 #endif
+
+  // Set a static value on whether Simd is supported.
+  // This variable is only used for certain archs to query SupportWasmSimd128()
+  // at runtime in builtins using an extern ref. Other callers should use
+  // CpuFeatures::SupportWasmSimd128().
+  CpuFeatures::supports_wasm_simd_128_ = CpuFeatures::SupportsWasmSimd128();
 }
 
 void CpuFeatures::PrintTarget() {}
@@ -253,29 +261,27 @@ static const int kNegOffset = 0x00008000;
 // operations as post-increment of sp.
 const Instr kPopInstruction = ADDIU | (sp.code() << kRsShift) |
                               (sp.code() << kRtShift) |
-                              (kPointerSize & kImm16Mask);  // NOLINT
+                              (kPointerSize & kImm16Mask);
 // addiu(sp, sp, -4) part of Push(r) operation as pre-decrement of sp.
 const Instr kPushInstruction = ADDIU | (sp.code() << kRsShift) |
                                (sp.code() << kRtShift) |
-                               (-kPointerSize & kImm16Mask);  // NOLINT
+                               (-kPointerSize & kImm16Mask);
 // sw(r, MemOperand(sp, 0))
-const Instr kPushRegPattern =
-    SW | (sp.code() << kRsShift) | (0 & kImm16Mask);  // NOLINT
+const Instr kPushRegPattern = SW | (sp.code() << kRsShift) | (0 & kImm16Mask);
 //  lw(r, MemOperand(sp, 0))
-const Instr kPopRegPattern =
-    LW | (sp.code() << kRsShift) | (0 & kImm16Mask);  // NOLINT
+const Instr kPopRegPattern = LW | (sp.code() << kRsShift) | (0 & kImm16Mask);
 
 const Instr kLwRegFpOffsetPattern =
-    LW | (fp.code() << kRsShift) | (0 & kImm16Mask);  // NOLINT
+    LW | (fp.code() << kRsShift) | (0 & kImm16Mask);
 
 const Instr kSwRegFpOffsetPattern =
-    SW | (fp.code() << kRsShift) | (0 & kImm16Mask);  // NOLINT
+    SW | (fp.code() << kRsShift) | (0 & kImm16Mask);
 
 const Instr kLwRegFpNegOffsetPattern =
-    LW | (fp.code() << kRsShift) | (kNegOffset & kImm16Mask);  // NOLINT
+    LW | (fp.code() << kRsShift) | (kNegOffset & kImm16Mask);
 
 const Instr kSwRegFpNegOffsetPattern =
-    SW | (fp.code() << kRsShift) | (kNegOffset & kImm16Mask);  // NOLINT
+    SW | (fp.code() << kRsShift) | (kNegOffset & kImm16Mask);
 // A mask for the Rt register for push, pop, lw, sw instructions.
 const Instr kRtMask = kRtFieldMask;
 const Instr kLwSwInstrTypeMask = 0xFFE00000;
@@ -872,7 +878,6 @@ int Assembler::target_at(int pos, bool is_internal) {
       }
     }
   }
-  return 0;
 }
 
 static inline Instr SetBranchOffset(int32_t pos, int32_t target_pos,
@@ -1128,7 +1133,7 @@ int Assembler::BranchOffset(Instr instr) {
 // space.  There is no guarantee that the relocated location can be similarly
 // encoded.
 bool Assembler::MustUseReg(RelocInfo::Mode rmode) {
-  return !RelocInfo::IsNone(rmode);
+  return !RelocInfo::IsNoInfo(rmode);
 }
 
 void Assembler::GenInstrRegister(Opcode opcode, Register rs, Register rt,
@@ -1982,11 +1987,11 @@ void Assembler::AdjustBaseAndOffset(MemOperand* src,
   constexpr int32_t kMaxOffsetForSimpleAdjustment =
       2 * kMinOffsetForSimpleAdjustment;
   if (0 <= src->offset() && src->offset() <= kMaxOffsetForSimpleAdjustment) {
-    addiu(at, src->rm(), kMinOffsetForSimpleAdjustment);
+    addiu(scratch, src->rm(), kMinOffsetForSimpleAdjustment);
     src->offset_ -= kMinOffsetForSimpleAdjustment;
   } else if (-kMaxOffsetForSimpleAdjustment <= src->offset() &&
              src->offset() < 0) {
-    addiu(at, src->rm(), -kMinOffsetForSimpleAdjustment);
+    addiu(scratch, src->rm(), -kMinOffsetForSimpleAdjustment);
     src->offset_ += kMinOffsetForSimpleAdjustment;
   } else if (IsMipsArchVariant(kMips32r6)) {
     // On r6 take advantage of the aui instruction, e.g.:
@@ -3559,13 +3564,14 @@ void Assembler::GrowBuffer() {
   buffer_ = std::move(new_buffer);
   buffer_start_ = new_start;
   pc_ += pc_delta;
-  last_call_pc_ += pc_delta;
+  pc_for_safepoint_ += pc_delta;
   reloc_info_writer.Reposition(reloc_info_writer.pos() + rc_delta,
                                reloc_info_writer.last_pc() + pc_delta);
 
   // Relocate runtime entries.
-  Vector<byte> instructions{buffer_start_, pc_offset()};
-  Vector<const byte> reloc_info{reloc_info_writer.pos(), reloc_size};
+  base::Vector<byte> instructions{buffer_start_,
+                                  static_cast<size_t>(pc_offset())};
+  base::Vector<const byte> reloc_info{reloc_info_writer.pos(), reloc_size};
   for (RelocIterator it(instructions, reloc_info, 0); !it.done(); it.next()) {
     RelocInfo::Mode rmode = it.rinfo()->rmode();
     if (rmode == RelocInfo::INTERNAL_REFERENCE_ENCODED ||
@@ -3573,6 +3579,7 @@ void Assembler::GrowBuffer() {
       RelocateInternalReference(rmode, it.rinfo()->pc(), pc_delta);
     }
   }
+
   DCHECK(!overflow());
 }
 
@@ -3584,8 +3591,9 @@ void Assembler::db(uint8_t data) {
 
 void Assembler::dd(uint32_t data, RelocInfo::Mode rmode) {
   CheckForEmitInForbiddenSlot();
-  if (!RelocInfo::IsNone(rmode)) {
-    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode));
+  if (!RelocInfo::IsNoInfo(rmode)) {
+    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode) ||
+           RelocInfo::IsLiteralConstant(rmode));
     RecordRelocInfo(rmode);
   }
   *reinterpret_cast<uint32_t*>(pc_) = data;
@@ -3594,8 +3602,9 @@ void Assembler::dd(uint32_t data, RelocInfo::Mode rmode) {
 
 void Assembler::dq(uint64_t data, RelocInfo::Mode rmode) {
   CheckForEmitInForbiddenSlot();
-  if (!RelocInfo::IsNone(rmode)) {
-    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode));
+  if (!RelocInfo::IsNoInfo(rmode)) {
+    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode) ||
+           RelocInfo::IsLiteralConstant(rmode));
     RecordRelocInfo(rmode);
   }
   *reinterpret_cast<uint64_t*>(pc_) = data;
@@ -3668,7 +3677,7 @@ void Assembler::CheckTrampolinePool() {
             bc(&after_pool);
             nop();
           } else {
-            GenPCRelativeJump(t8, t9, 0, RelocInfo::NONE,
+            GenPCRelativeJump(t8, t9, 0, RelocInfo::NO_INFO,
                               BranchDelaySlot::PROTECT);
           }
         }
@@ -3790,7 +3799,7 @@ void Assembler::GenPCRelativeJump(Register tf, Register ts, int32_t imm32,
   // or when changing imm32 that lui/ori pair loads.
   or_(tf, ra, zero_reg);
   nal();  // Relative place of nal instruction determines kLongBranchPCOffset.
-  if (!RelocInfo::IsNone(rmode)) {
+  if (!RelocInfo::IsNoInfo(rmode)) {
     RecordRelocInfo(rmode);
   }
   lui(ts, (imm32 & kHiMask) >> kLuiShift);
@@ -3808,7 +3817,7 @@ void Assembler::GenPCRelativeJump(Register tf, Register ts, int32_t imm32,
 void Assembler::GenPCRelativeJumpAndLink(Register t, int32_t imm32,
                                          RelocInfo::Mode rmode,
                                          BranchDelaySlot bdslot) {
-  if (!RelocInfo::IsNone(rmode)) {
+  if (!RelocInfo::IsNoInfo(rmode)) {
     RecordRelocInfo(rmode);
   }
   // Order of these instructions is relied upon when patching them
@@ -3819,7 +3828,7 @@ void Assembler::GenPCRelativeJumpAndLink(Register t, int32_t imm32,
   addu(t, ra, t);
   jalr(t);
   if (bdslot == PROTECT) nop();
-  set_last_call_pc_(pc_);
+  set_pc_for_safepoint();
 }
 
 UseScratchRegisterScope::UseScratchRegisterScope(Assembler* assembler)

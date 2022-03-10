@@ -11,7 +11,15 @@
 
 #if HAVE_OPENSSL
 #include <openssl/opensslv.h>
+#if NODE_OPENSSL_HAS_QUIC
+#include <openssl/quic.h>
+#endif
 #endif  // HAVE_OPENSSL
+
+#ifdef OPENSSL_INFO_QUIC
+#include <ngtcp2/version.h>
+#include <nghttp3/version.h>
+#endif
 
 #ifdef NODE_HAVE_I18N_SUPPORT
 #include <unicode/timezone.h>
@@ -95,6 +103,11 @@ Metadata::Versions::Versions() {
   icu = U_ICU_VERSION;
   unicode = U_UNICODE_VERSION;
 #endif  // NODE_HAVE_I18N_SUPPORT
+
+#ifdef OPENSSL_INFO_QUIC
+  ngtcp2 = NGTCP2_VERSION;
+  nghttp3 = NGHTTP3_VERSION;
+#endif
 }
 
 Metadata::Release::Release() : name(NODE_RELEASE) {

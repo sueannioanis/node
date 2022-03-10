@@ -6,7 +6,8 @@ if (!common.hasCrypto)
   common.skip('missing crypto');
 
 const assert = require('assert');
-const { subtle, getRandomValues } = require('crypto').webcrypto;
+const { webcrypto } = require('crypto');
+const { subtle } = webcrypto;
 
 const kTests = [
   {
@@ -53,7 +54,7 @@ async function prepareKeys() {
     kTests.map(async ({ namedCurve, size, pkcs8, spki, result }) => {
       const [
         privateKey,
-        publicKey
+        publicKey,
       ] = await Promise.all([
         subtle.importKey(
           'pkcs8',
@@ -72,7 +73,7 @@ async function prepareKeys() {
             namedCurve
           },
           true,
-          ['deriveKey', 'deriveBits'])
+          ['deriveKey', 'deriveBits']),
       ]);
       keys[namedCurve] = {
         privateKey,
@@ -98,6 +99,7 @@ async function prepareKeys() {
           public: publicKey
         }, privateKey, 8 * size);
 
+        assert(bits instanceof ArrayBuffer);
         assert.strictEqual(Buffer.from(bits).toString('hex'), result);
       }
 
@@ -249,7 +251,7 @@ async function prepareKeys() {
 
   {
     // Public is a secret key
-    const keyData = getRandomValues(new Uint8Array(32));
+    const keyData = webcrypto.getRandomValues(new Uint8Array(32));
     const key = await subtle.importKey(
       'raw',
       keyData,

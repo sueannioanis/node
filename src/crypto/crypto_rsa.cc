@@ -63,17 +63,31 @@ EVPKeyCtxPointer RsaKeyGenTraits::Setup(RsaKeyPairGenConfig* params) {
       return EVPKeyCtxPointer();
     }
 
-    if (params->params.mgf1_md != nullptr &&
+    // TODO(tniessen): This appears to only be necessary in OpenSSL 3, while
+    // OpenSSL 1.1.1 behaves as recommended by RFC 8017 and defaults the MGF1
+    // hash algorithm to the RSA-PSS hashAlgorithm. Remove this code if the
+    // behavior of OpenSSL 3 changes.
+    const EVP_MD* mgf1_md = params->params.mgf1_md;
+    if (mgf1_md == nullptr && params->params.md != nullptr) {
+      mgf1_md = params->params.md;
+    }
+
+    if (mgf1_md != nullptr &&
         EVP_PKEY_CTX_set_rsa_pss_keygen_mgf1_md(
             ctx.get(),
-            params->params.mgf1_md) <= 0) {
+            mgf1_md) <= 0) {
       return EVPKeyCtxPointer();
     }
 
-    if (params->params.saltlen >= 0 &&
+    int saltlen = params->params.saltlen;
+    if (saltlen < 0 && params->params.md != nullptr) {
+      saltlen = EVP_MD_size(params->params.md);
+    }
+
+    if (saltlen >= 0 &&
         EVP_PKEY_CTX_set_rsa_pss_keygen_saltlen(
             ctx.get(),
-            params->params.saltlen) <= 0) {
+            saltlen) <= 0) {
       return EVPKeyCtxPointer();
     }
   }
@@ -138,9 +152,7 @@ Maybe<bool> RsaKeyGenTraits::AdditionalConfig(
       Utf8Value digest(env->isolate(), args[*offset]);
       params->params.md = EVP_get_digestbyname(*digest);
       if (params->params.md == nullptr) {
-        char msg[1024];
-        snprintf(msg, sizeof(msg), "md specifies an invalid digest");
-        THROW_ERR_CRYPTO_INVALID_DIGEST(env, msg);
+        THROW_ERR_CRYPTO_INVALID_DIGEST(env, "md specifies an invalid digest");
         return Nothing<bool>();
       }
     }
@@ -150,9 +162,8 @@ Maybe<bool> RsaKeyGenTraits::AdditionalConfig(
       Utf8Value digest(env->isolate(), args[*offset + 1]);
       params->params.mgf1_md = EVP_get_digestbyname(*digest);
       if (params->params.mgf1_md == nullptr) {
-        char msg[1024];
-        snprintf(msg, sizeof(msg), "mgf1_md specifies an invalid digest");
-        THROW_ERR_CRYPTO_INVALID_DIGEST(env, msg);
+        THROW_ERR_CRYPTO_INVALID_DIGEST(env,
+          "mgf1_md specifies an invalid digest");
         return Nothing<bool>();
       }
     }
@@ -161,9 +172,9 @@ Maybe<bool> RsaKeyGenTraits::AdditionalConfig(
       CHECK(args[*offset + 2]->IsInt32());
       params->params.saltlen = args[*offset + 2].As<Int32>()->Value();
       if (params->params.saltlen < 0) {
-        char msg[1024];
-        snprintf(msg, sizeof(msg), "salt length is out of range");
-        THROW_ERR_OUT_OF_RANGE(env, msg);
+        THROW_ERR_OUT_OF_RANGE(
+          env,
+          "salt length is out of range");
         return Nothing<bool>();
       }
     }
@@ -213,7 +224,10 @@ WebCryptoCipherStatus RSA_Cipher(
   if (label_len > 0) {
     void* label = OPENSSL_memdup(params.label.get(), label_len);
     CHECK_NOT_NULL(label);
-    if (EVP_PKEY_CTX_set0_rsa_oaep_label(ctx.get(), label, label_len) <= 0) {
+    if (EVP_PKEY_CTX_set0_rsa_oaep_label(
+      ctx.get(),
+      static_cast<unsigned char*>(label),
+      label_len) <= 0) {
       OPENSSL_free(label);
       return WebCryptoCipherStatus::FAILED;
     }
@@ -371,11 +385,11 @@ Maybe<bool> ExportJWKRsaKey(
 
   // TODO(tniessen): Remove the "else" branch once we drop support for OpenSSL
   // versions older than 1.1.1e via FIPS / dynamic linking.
-  RSA* rsa;
+  const RSA* rsa;
   if (OpenSSL_version_num() >= 0x1010105fL) {
     rsa = EVP_PKEY_get0_RSA(m_pkey.get());
   } else {
-    rsa = static_cast<RSA*>(EVP_PKEY_get0(m_pkey.get()));
+    rsa = static_cast<const RSA*>(EVP_PKEY_get0(m_pkey.get()));
   }
   CHECK_NOT_NULL(rsa);
 
@@ -520,11 +534,11 @@ Maybe<bool> GetRsaKeyDetail(
 
   // TODO(tniessen): Remove the "else" branch once we drop support for OpenSSL
   // versions older than 1.1.1e via FIPS / dynamic linking.
-  RSA* rsa;
+  const RSA* rsa;
   if (OpenSSL_version_num() >= 0x1010105fL) {
     rsa = EVP_PKEY_get0_RSA(m_pkey.get());
   } else {
-    rsa = static_cast<RSA*>(EVP_PKEY_get0(m_pkey.get()));
+    rsa = static_cast<const RSA*>(EVP_PKEY_get0(m_pkey.get()));
   }
   CHECK_NOT_NULL(rsa);
 
@@ -547,10 +561,84 @@ Maybe<bool> GetRsaKeyDetail(
       reinterpret_cast<unsigned char*>(public_exponent.data());
   CHECK_EQ(BN_bn2binpad(e, data, len), len);
 
-  return target->Set(
-      env->context(),
-      env->public_exponent_string(),
-      public_exponent.ToArrayBuffer());
+  if (target
+          ->Set(
+              env->context(),
+              env->public_exponent_string(),
+              public_exponent.ToArrayBuffer())
+          .IsNothing()) {
+    return Nothing<bool>();
+  }
+
+  if (type == EVP_PKEY_RSA_PSS) {
+    // Due to the way ASN.1 encoding works, default values are omitted when
+    // encoding the data structure. However, there are also RSA-PSS keys for
+    // which no parameters are set. In that case, the ASN.1 RSASSA-PSS-params
+    // sequence will be missing entirely and RSA_get0_pss_params will return
+    // nullptr. If parameters are present but all parameters are set to their
+    // default values, an empty sequence will be stored in the ASN.1 structure.
+    // In that case, RSA_get0_pss_params does not return nullptr but all fields
+    // of the returned RSA_PSS_PARAMS will be set to nullptr.
+
+    const RSA_PSS_PARAMS* params = RSA_get0_pss_params(rsa);
+    if (params != nullptr) {
+      int hash_nid = NID_sha1;
+      int mgf_nid = NID_mgf1;
+      int mgf1_hash_nid = NID_sha1;
+      int64_t salt_length = 20;
+
+      if (params->hashAlgorithm != nullptr) {
+        hash_nid = OBJ_obj2nid(params->hashAlgorithm->algorithm);
+      }
+
+      if (target
+              ->Set(
+                  env->context(),
+                  env->hash_algorithm_string(),
+                  OneByteString(env->isolate(), OBJ_nid2ln(hash_nid)))
+              .IsNothing()) {
+        return Nothing<bool>();
+      }
+
+      if (params->maskGenAlgorithm != nullptr) {
+        mgf_nid = OBJ_obj2nid(params->maskGenAlgorithm->algorithm);
+        if (mgf_nid == NID_mgf1) {
+          mgf1_hash_nid = OBJ_obj2nid(params->maskHash->algorithm);
+        }
+      }
+
+      // If, for some reason, the MGF is not MGF1, then the MGF1 hash function
+      // is intentionally not added to the object.
+      if (mgf_nid == NID_mgf1) {
+        if (target
+                ->Set(
+                    env->context(),
+                    env->mgf1_hash_algorithm_string(),
+                    OneByteString(env->isolate(), OBJ_nid2ln(mgf1_hash_nid)))
+                .IsNothing()) {
+          return Nothing<bool>();
+        }
+      }
+
+      if (params->saltLength != nullptr) {
+        if (ASN1_INTEGER_get_int64(&salt_length, params->saltLength) != 1) {
+          ThrowCryptoError(env, ERR_get_error(), "ASN1_INTEGER_get_in64 error");
+          return Nothing<bool>();
+        }
+      }
+
+      if (target
+              ->Set(
+                  env->context(),
+                  env->salt_length_string(),
+                  Number::New(env->isolate(), static_cast<double>(salt_length)))
+              .IsNothing()) {
+        return Nothing<bool>();
+      }
+    }
+  }
+
+  return Just<bool>(true);
 }
 
 namespace RSAAlg {
@@ -559,9 +647,15 @@ void Initialize(Environment* env, Local<Object> target) {
   RSAKeyExportJob::Initialize(env, target);
   RSACipherJob::Initialize(env, target);
 
-  NODE_DEFINE_CONSTANT(target, kKeyVariantRSA_SSA_PKCS1_V1_5);
+  NODE_DEFINE_CONSTANT(target, kKeyVariantRSA_SSA_PKCS1_v1_5);
   NODE_DEFINE_CONSTANT(target, kKeyVariantRSA_PSS);
   NODE_DEFINE_CONSTANT(target, kKeyVariantRSA_OAEP);
+}
+
+void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
+  RSAKeyPairGenJob::RegisterExternalReferences(registry);
+  RSAKeyExportJob::RegisterExternalReferences(registry);
+  RSACipherJob::RegisterExternalReferences(registry);
 }
 }  // namespace RSAAlg
 }  // namespace crypto

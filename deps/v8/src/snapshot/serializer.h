@@ -124,10 +124,12 @@ class CodeAddressMap : public CodeEventLogger {
     address_to_name_map_.Insert(code->address(), name, length);
   }
 
+#if V8_ENABLE_WEBASSEMBLY
   void LogRecordedBuffer(const wasm::WasmCode* code, const char* name,
                          int length) override {
     UNREACHABLE();
   }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
   NameMap address_to_name_map_;
 };
@@ -150,9 +152,18 @@ class ObjectCacheIndexMap {
     return find_result.already_exists;
   }
 
- private:
-  DISALLOW_GARBAGE_COLLECTION(no_gc_)
+  bool Lookup(HeapObject obj, int* index_out) const {
+    int* index = map_.Find(obj);
+    if (index == nullptr) {
+      return false;
+    }
+    *index_out = *index;
+    return true;
+  }
 
+  int size() const { return next_index_; }
+
+ private:
   IdentityMap<int, base::DefaultAllocationPolicy> map_;
   int next_index_;
 };
@@ -171,6 +182,16 @@ class Serializer : public SerializerDeserializer {
   }
 
   Isolate* isolate() const { return isolate_; }
+
+  // The pointer compression cage base value used for decompression of all
+  // tagged values except references to Code objects.
+  PtrComprCageBase cage_base() const {
+#if V8_COMPRESS_POINTERS
+    return cage_base_;
+#else
+    return PtrComprCageBase{};
+#endif  // V8_COMPRESS_POINTERS
+  }
 
   int TotalAllocationSize() const;
 
@@ -192,6 +213,10 @@ class Serializer : public SerializerDeserializer {
     static const int kMaxRecursionDepth = 32;
     Serializer* serializer_;
   };
+
+  // Compares obj with not_mapped_symbol root. When V8_EXTERNAL_CODE_SPACE is
+  // enabled it compares full pointers.
+  V8_INLINE bool IsNotMappedSymbol(HeapObject obj) const;
 
   void SerializeDeferredObjects();
   void SerializeObject(Handle<HeapObject> o);
@@ -233,9 +258,8 @@ class Serializer : public SerializerDeserializer {
   // Returns true if the given heap object is a bytecode handler code object.
   bool ObjectIsBytecodeHandler(Handle<HeapObject> obj) const;
 
-  ExternalReferenceEncoder::Value EncodeExternalReference(Address addr) {
-    return external_reference_encoder_.Encode(addr);
-  }
+  ExternalReferenceEncoder::Value EncodeExternalReference(Address addr);
+
   Maybe<ExternalReferenceEncoder::Value> TryEncodeExternalReference(
       Address addr) {
     return external_reference_encoder_.TryEncode(addr);
@@ -270,7 +294,7 @@ class Serializer : public SerializerDeserializer {
 
 #ifdef DEBUG
   void PushStack(Handle<HeapObject> o) { stack_.Push(*o); }
-  void PopStack() { stack_.Pop(); }
+  void PopStack();
   void PrintStack();
   void PrintStack(std::ostream&);
 #endif  // DEBUG
@@ -285,6 +309,10 @@ class Serializer : public SerializerDeserializer {
   }
   bool allow_active_isolate_for_testing() const {
     return (flags_ & Snapshot::kAllowActiveIsolateForTesting) != 0;
+  }
+
+  bool reconstruct_read_only_object_cache_for_testing() const {
+    return (flags_ & Snapshot::kReconstructReadOnlyObjectCacheForTesting) != 0;
   }
 
  private:
@@ -332,9 +360,12 @@ class Serializer : public SerializerDeserializer {
 
   // Disallow GC during serialization.
   // TODO(leszeks, v8:10815): Remove this constraint.
-  DISALLOW_GARBAGE_COLLECTION(no_gc)
+  DISALLOW_GARBAGE_COLLECTION(no_gc_)
 
   Isolate* isolate_;
+#if V8_COMPRESS_POINTERS
+  const PtrComprCageBase cage_base_;
+#endif  // V8_COMPRESS_POINTERS
   HotObjectsList hot_objects_;
   SerializerReferenceMap reference_map_;
   ExternalReferenceEncoder external_reference_encoder_;
@@ -399,7 +430,6 @@ class Serializer::ObjectSerializer : public ObjectVisitor {
     serializer_->PushStack(obj);
 #endif  // DEBUG
   }
-  // NOLINTNEXTLINE (modernize-use-equals-default)
   ~ObjectSerializer() override {
 #ifdef DEBUG
     serializer_->PopStack();
@@ -412,6 +442,7 @@ class Serializer::ObjectSerializer : public ObjectVisitor {
                      ObjectSlot end) override;
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) override;
+  void VisitCodePointer(HeapObject host, CodeObjectSlot slot) override;
   void VisitEmbeddedPointer(Code host, RelocInfo* target) override;
   void VisitExternalReference(Foreign host, Address* p) override;
   void VisitExternalReference(Code host, RelocInfo* rinfo) override;

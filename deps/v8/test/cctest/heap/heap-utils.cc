@@ -122,7 +122,8 @@ std::vector<Handle<FixedArray>> CreatePadding(Heap* heap, int padding_size,
     CHECK((allocation == AllocationType::kYoung &&
            heap->new_space()->Contains(*handles.back())) ||
           (allocation == AllocationType::kOld &&
-           heap->InOldSpace(*handles.back())));
+           heap->InOldSpace(*handles.back())) ||
+          FLAG_single_generation);
     free_memory -= handles.back()->Size();
   }
   return handles;
@@ -197,7 +198,7 @@ void SimulateFullSpace(v8::internal::PagedSpace* space) {
   // FLAG_stress_concurrent_allocation = false;
   // Background thread allocating concurrently interferes with this function.
   CHECK(!FLAG_stress_concurrent_allocation);
-  CodeSpaceMemoryModificationScope modification_scope(space->heap());
+  CodePageCollectionMemoryModificationScope modification_scope(space->heap());
   i::MarkCompactCollector* collector = space->heap()->mark_compact_collector();
   if (collector->sweeping_in_progress()) {
     collector->EnsureSweepingCompleted();
@@ -241,12 +242,6 @@ void ForceEvacuationCandidate(Page* page) {
 bool InCorrectGeneration(HeapObject object) {
   return FLAG_single_generation ? !i::Heap::InYoungGeneration(object)
                                 : i::Heap::InYoungGeneration(object);
-}
-
-void EnsureFlagLocalHeapsEnabled() {
-  // Avoid data race in concurrent thread by only setting the flag to true if
-  // not already enabled.
-  if (!FLAG_local_heaps) FLAG_local_heaps = true;
 }
 
 void GrowNewSpace(Heap* heap) {

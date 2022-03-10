@@ -135,7 +135,7 @@ replProc.on('close', function(code) {
   assert.strictEqual(code, 0);
   const output = [
     'A',
-    '> '
+    '> ',
   ];
   assert.ok(replStdout.startsWith(output[0]));
   assert.ok(replStdout.endsWith(output[1]));
@@ -168,7 +168,7 @@ childProcess.exec(
     fixtures.path('cluster-preload-test.js')}"`,
   function(err, stdout, stderr) {
     assert.ifError(err);
-    assert.ok(/worker terminated with code 43/.test(stdout));
+    assert.match(stdout, /worker terminated with code 43/);
   }
 );
 
@@ -198,6 +198,6 @@ childProcess.exec(
   { cwd: fixtures.fixturesDir },
   function(err, stdout, stderr) {
     assert.ifError(err);
-    assert.ok(/worker terminated with code 43/.test(stdout));
+    assert.match(stdout, /worker terminated with code 43/);
   }
 );

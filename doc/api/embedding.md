@@ -61,12 +61,13 @@ int main(int argc, char** argv) {
   int ret = RunNodeInstance(platform.get(), args, exec_args);
 
   V8::Dispose();
-  V8::ShutdownPlatform();
+  V8::DisposePlatform();
   return ret;
 }
 ```
 
 ### Per-instance state
+
 <!-- YAML
 changes:
   - version: v15.0.0
@@ -159,7 +160,7 @@ int RunNodeInstance(MultiIsolatePlatform* platform,
 ```
 
 [CLI options]: cli.md
-[`process.memoryUsage()`]: process.md#process_process_memoryusage
+[`process.memoryUsage()`]: process.md#processmemoryusage
 [deprecation policy]: deprecations.md
 [embedtest.cc]: https://github.com/nodejs/node/blob/HEAD/test/embedding/embedtest.cc
 [src/node.h]: https://github.com/nodejs/node/blob/HEAD/src/node.h

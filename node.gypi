@@ -320,6 +320,7 @@
       'defines': [ 'HAVE_OPENSSL=1' ],
       'conditions': [
         [ 'node_shared_openssl=="false"', {
+          'defines': [ 'OPENSSL_API_COMPAT=0x10100000L', ],
           'dependencies': [
             './deps/openssl/openssl.gyp:openssl',
 
@@ -360,12 +361,17 @@
                 }],
               ],
             }],
-          ],
-        }]]
-
+          ]
+        }],
+        [ 'openssl_quic=="true" and node_shared_ngtcp2=="false"', {
+          'dependencies': [ './deps/ngtcp2/ngtcp2.gyp:ngtcp2' ]
+        }],
+        [ 'openssl_quic=="true" and node_shared_nghttp3=="false"', {
+          'dependencies': [ './deps/ngtcp2/ngtcp2.gyp:nghttp3' ]
+        }]
+      ]
     }, {
       'defines': [ 'HAVE_OPENSSL=0' ]
     }],
-
   ],
 }

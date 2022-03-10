@@ -10,7 +10,7 @@ const {
   open,
   readFile,
   writeFile,
-  truncate
+  truncate,
 } = fs.promises;
 const path = require('path');
 const tmpdir = require('../common/tmpdir');
@@ -56,14 +56,16 @@ async function doReadAndCancel() {
   {
     const filePathForHandle = path.resolve(tmpDir, 'dogs-running.txt');
     const fileHandle = await open(filePathForHandle, 'w+');
-    const buffer = Buffer.from('Dogs running'.repeat(10000), 'utf8');
-    fs.writeFileSync(filePathForHandle, buffer);
-    const controller = new AbortController();
-    const { signal } = controller;
-    controller.abort();
-    await assert.rejects(readFile(fileHandle, { signal }), {
-      name: 'AbortError'
-    });
+    try {
+      const buffer = Buffer.from('Dogs running'.repeat(10000), 'utf8');
+      fs.writeFileSync(filePathForHandle, buffer);
+      const signal = AbortSignal.abort();
+      await assert.rejects(readFile(fileHandle, { signal }), {
+        name: 'AbortError'
+      });
+    } finally {
+      await fileHandle.close();
+    }
   }
 
   // Signal aborted on first tick
@@ -74,10 +76,11 @@ async function doReadAndCancel() {
     fs.writeFileSync(filePathForHandle, buffer);
     const controller = new AbortController();
     const { signal } = controller;
-    tick(1, () => controller.abort());
+    process.nextTick(() => controller.abort());
     await assert.rejects(readFile(fileHandle, { signal }), {
       name: 'AbortError'
-    });
+    }, 'tick-0');
+    await fileHandle.close();
   }
 
   // Signal aborted right before buffer read
@@ -90,10 +93,12 @@ async function doReadAndCancel() {
 
     const controller = new AbortController();
     const { signal } = controller;
-    tick(2, () => controller.abort());
+    tick(1, () => controller.abort());
     await assert.rejects(fileHandle.readFile({ signal, encoding: 'utf8' }), {
       name: 'AbortError'
-    });
+    }, 'tick-1');
+
+    await fileHandle.close();
   }
 
   // Validate file size is within range for reading
@@ -111,6 +116,7 @@ async function doReadAndCancel() {
       name: 'RangeError',
       code: 'ERR_FS_FILE_TOO_LARGE'
     });
+    await fileHandle.close();
   }
 }
 

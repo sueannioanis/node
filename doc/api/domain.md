@@ -1,4 +1,5 @@
 # Domain
+
 <!-- YAML
 deprecated: v1.4.2
 changes:
@@ -20,7 +21,7 @@ changes:
 
 <!-- source_link=lib/domain.js -->
 
-**This module is pending deprecation**. Once a replacement API has been
+**This module is pending deprecation.** Once a replacement API has been
 finalized, this module will be fully deprecated. Most developers should
 **not** have cause to use this module. Users who absolutely must have
 the functionality that domains provide may rely on it for the time being
@@ -69,7 +70,7 @@ const d = require('domain').create();
 d.on('error', (er) => {
   // The error won't crash the process, but what it does is worse!
   // Though we've prevented abrupt process restarting, we are leaking
-  // resources like crazy if this ever happens.
+  // a lot of resources if this ever happens.
   // This is no better than process.on('uncaughtException')!
   console.log(`error, but oh well ${er.message}`);
 });
@@ -479,10 +480,10 @@ Domains will not interfere with the error handling mechanisms for
 promises. In other words, no `'error'` event will be emitted for unhandled
 `Promise` rejections.
 
-[`Error`]: errors.md#errors_class_error
-[`domain.add(emitter)`]: #domain_domain_add_emitter
-[`domain.bind(callback)`]: #domain_domain_bind_callback
-[`domain.exit()`]: #domain_domain_exit
-[`setInterval()`]: timers.md#timers_setinterval_callback_delay_args
-[`setTimeout()`]: timers.md#timers_settimeout_callback_delay_args
+[`Error`]: errors.md#class-error
+[`domain.add(emitter)`]: #domainaddemitter
+[`domain.bind(callback)`]: #domainbindcallback
+[`domain.exit()`]: #domainexit
+[`setInterval()`]: timers.md#setintervalcallback-delay-args
+[`setTimeout()`]: timers.md#settimeoutcallback-delay-args
 [`throw`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw

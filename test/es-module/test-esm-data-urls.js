@@ -1,4 +1,3 @@
-// Flags: --experimental-json-modules
 'use strict';
 const common = require('../common');
 const assert = require('assert');
@@ -15,7 +14,7 @@ function createBase64URL(mime, body) {
     const plainESMURL = createURL('text/javascript', body);
     const ns = await import(plainESMURL);
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default.a, 'aaa');
+    assert.strictEqual(ns.default.a, 'aaa');
     const importerOfURL = createURL(
       'text/javascript',
       `export {default as default} from ${JSON.stringify(plainESMURL)}`
@@ -35,45 +34,46 @@ function createBase64URL(mime, body) {
     const plainESMURL = createURL('text/javascript', body);
     const ns = await import(plainESMURL);
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default, plainESMURL);
+    assert.strictEqual(ns.default, plainESMURL);
   }
   {
     const body = 'export default import.meta.url;';
     const plainESMURL = createURL('text/javascript;charset=UTF-8', body);
     const ns = await import(plainESMURL);
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default, plainESMURL);
+    assert.strictEqual(ns.default, plainESMURL);
   }
   {
     const body = 'export default import.meta.url;';
     const plainESMURL = createURL('text/javascript;charset="UTF-8"', body);
     const ns = await import(plainESMURL);
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default, plainESMURL);
+    assert.strictEqual(ns.default, plainESMURL);
   }
   {
     const body = 'export default import.meta.url;';
     const plainESMURL = createURL('text/javascript;;a=a;b=b;;', body);
     const ns = await import(plainESMURL);
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default, plainESMURL);
+    assert.strictEqual(ns.default, plainESMURL);
   }
   {
-    const ns = await import('data:application/json;foo="test,"this"');
+    const ns = await import('data:application/json;foo="test,"this"',
+      { assert: { type: 'json' } });
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default, 'this');
+    assert.strictEqual(ns.default, 'this');
   }
   {
     const ns = await import(`data:application/json;foo=${
       encodeURIComponent('test,')
-    },0`);
+    },0`, { assert: { type: 'json' } });
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default, 0);
+    assert.strictEqual(ns.default, 0);
   }
   {
-    await assert.rejects(async () => {
-      return import('data:application/json;foo="test,",0');
-    }, {
+    await assert.rejects(async () =>
+      import('data:application/json;foo="test,",0',
+        { assert: { type: 'json' } }), {
       name: 'SyntaxError',
       message: /Unexpected end of JSON input/
     });
@@ -81,16 +81,16 @@ function createBase64URL(mime, body) {
   {
     const body = '{"x": 1}';
     const plainESMURL = createURL('application/json', body);
-    const ns = await import(plainESMURL);
+    const ns = await import(plainESMURL, { assert: { type: 'json' } });
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default.x, 1);
+    assert.strictEqual(ns.default.x, 1);
   }
   {
     const body = '{"default": 2}';
     const plainESMURL = createURL('application/json', body);
-    const ns = await import(plainESMURL);
+    const ns = await import(plainESMURL, { assert: { type: 'json' } });
     assert.deepStrictEqual(Object.keys(ns), ['default']);
-    assert.deepStrictEqual(ns.default.default, 2);
+    assert.strictEqual(ns.default.default, 2);
   }
   {
     const body = 'null';
@@ -99,7 +99,7 @@ function createBase64URL(mime, body) {
       await import(plainESMURL);
       common.mustNotCall()();
     } catch (e) {
-      assert.strictEqual(e.code, 'ERR_INVALID_RETURN_PROPERTY_VALUE');
+      assert.strictEqual(e.code, 'ERR_INVALID_URL');
     }
   }
   {

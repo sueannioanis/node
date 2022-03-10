@@ -5,9 +5,18 @@
 #include <unordered_map>
 #include <vector>
 
-#include "include/v8.h"
+#include "include/v8-context.h"
+#include "include/v8-function.h"
+#include "include/v8-local-handle.h"
+#include "include/v8-object.h"
+#include "include/v8-persistent-handle.h"
+#include "include/v8-template.h"
+#include "include/v8-traced-handle.h"
 #include "src/api/api-inl.h"
+#include "src/handles/global-handles.h"
+#include "src/heap/embedder-tracing.h"
 #include "src/heap/heap-inl.h"
+#include "src/heap/heap.h"
 #include "src/heap/safepoint.h"
 #include "src/objects/module.h"
 #include "src/objects/objects-inl.h"
@@ -82,7 +91,9 @@ class TestEmbedderHeapTracer final : public v8::EmbedderHeapTracer {
   void TracePrologue(EmbedderHeapTracer::TraceFlags) final {
     if (prologue_behavior_ == TracePrologueBehavior::kCallV8WriteBarrier) {
       auto local = array_.Get(isolate());
-      local->Set(local->CreationContext(), 0, v8::Object::New(isolate()))
+      local
+          ->Set(local->GetCreationContext().ToLocalChecked(), 0,
+                v8::Object::New(isolate()))
           .Check();
     }
   }
@@ -128,12 +139,12 @@ TEST(V8RegisteringEmbedderReference) {
   v8::Local<v8::Context> context = v8::Context::New(isolate);
   v8::Context::Scope context_scope(context);
 
-  void* first_field = reinterpret_cast<void*>(0x2);
-  v8::Local<v8::Object> api_object =
-      ConstructTraceableJSApiObject(context, first_field, nullptr);
+  void* first_and_second_field = reinterpret_cast<void*>(0x2);
+  v8::Local<v8::Object> api_object = ConstructTraceableJSApiObject(
+      context, first_and_second_field, first_and_second_field);
   CHECK(!api_object.IsEmpty());
   CcTest::CollectGarbage(i::OLD_SPACE);
-  CHECK(tracer.IsRegisteredFromV8(first_field));
+  CHECK(tracer.IsRegisteredFromV8(first_and_second_field));
 }
 
 TEST(EmbedderRegisteringV8Reference) {
@@ -182,11 +193,11 @@ TEST(TracingInRevivedSubgraph) {
   v8::Context::Scope context_scope(context);
 
   v8::Global<v8::Object> g;
-  void* first_field = reinterpret_cast<void*>(0x4);
+  void* first_and_second_field = reinterpret_cast<void*>(0x4);
   {
     v8::HandleScope inner_scope(isolate);
-    v8::Local<v8::Object> api_object =
-        ConstructTraceableJSApiObject(context, first_field, nullptr);
+    v8::Local<v8::Object> api_object = ConstructTraceableJSApiObject(
+        context, first_and_second_field, first_and_second_field);
     CHECK(!api_object.IsEmpty());
     v8::Local<v8::Object> o =
         v8::Local<v8::Object>::New(isolate, v8::Object::New(isolate));
@@ -195,7 +206,7 @@ TEST(TracingInRevivedSubgraph) {
     g.SetWeak(&g, ResurrectingFinalizer, v8::WeakCallbackType::kFinalizer);
   }
   CcTest::CollectGarbage(i::OLD_SPACE);
-  CHECK(tracer.IsRegisteredFromV8(first_field));
+  CHECK(tracer.IsRegisteredFromV8(first_and_second_field));
 }
 
 TEST(TracingInEphemerons) {
@@ -211,13 +222,13 @@ TEST(TracingInEphemerons) {
 
   v8::Local<v8::Object> key =
       v8::Local<v8::Object>::New(isolate, v8::Object::New(isolate));
-  void* first_field = reinterpret_cast<void*>(0x8);
+  void* first_and_second_field = reinterpret_cast<void*>(0x8);
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   Handle<JSWeakMap> weak_map = i_isolate->factory()->NewJSWeakMap();
   {
     v8::HandleScope inner_scope(isolate);
-    v8::Local<v8::Object> api_object =
-        ConstructTraceableJSApiObject(context, first_field, nullptr);
+    v8::Local<v8::Object> api_object = ConstructTraceableJSApiObject(
+        context, first_and_second_field, first_and_second_field);
     CHECK(!api_object.IsEmpty());
     Handle<JSObject> js_key =
         handle(JSObject::cast(*v8::Utils::OpenHandle(*key)), i_isolate);
@@ -226,7 +237,7 @@ TEST(TracingInEphemerons) {
     JSWeakCollection::Set(weak_map, js_key, js_api_object, hash);
   }
   CcTest::CollectGarbage(i::OLD_SPACE);
-  CHECK(tracer.IsRegisteredFromV8(first_field));
+  CHECK(tracer.IsRegisteredFromV8(first_and_second_field));
 }
 
 TEST(FinalizeTracingIsNoopWhenNotMarking) {
@@ -249,6 +260,7 @@ TEST(FinalizeTracingIsNoopWhenNotMarking) {
 }
 
 TEST(FinalizeTracingWhenMarking) {
+  if (!FLAG_incremental_marking) return;
   ManualGCScope manual_gc;
   CcTest::InitializeVM();
   v8::Isolate* isolate = CcTest::isolate();
@@ -274,21 +286,6 @@ TEST(FinalizeTracingWhenMarking) {
   CHECK(marking->IsMarking());
   tracer.FinalizeTracing();
   CHECK(marking->IsStopped());
-}
-
-TEST(GarbageCollectionForTesting) {
-  ManualGCScope manual_gc;
-  i::FLAG_expose_gc = true;
-  CcTest::InitializeVM();
-  v8::Isolate* isolate = CcTest::isolate();
-  Isolate* i_isolate = CcTest::i_isolate();
-  TestEmbedderHeapTracer tracer;
-  heap::TemporaryEmbedderHeapTracerScope tracer_scope(isolate, &tracer);
-
-  int saved_gc_counter = i_isolate->heap()->gc_count();
-  tracer.GarbageCollectionForTesting(
-      EmbedderHeapTracer::EmbedderStackState::kMayContainHeapPointers);
-  CHECK_GT(i_isolate->heap()->gc_count(), saved_gc_counter);
 }
 
 namespace {
@@ -355,7 +352,7 @@ TEST(TracedGlobalInStdVector) {
 
   std::vector<v8::TracedGlobal<v8::Object>> vec;
   {
-    v8::HandleScope scope(isolate);
+    v8::HandleScope new_scope(isolate);
     vec.emplace_back(isolate, v8::Object::New(isolate));
   }
   CHECK(!vec[0].IsEmpty());
@@ -367,7 +364,7 @@ TEST(TracedGlobalCopyWithDestructor) {
   ManualGCScope manual_gc;
   CcTest::InitializeVM();
   v8::Isolate* isolate = CcTest::isolate();
-  v8::HandleScope scope(isolate);
+  v8::HandleScope outer_scope(isolate);
   i::GlobalHandles* global_handles = CcTest::i_isolate()->global_handles();
 
   const size_t initial_count = global_handles->handles_count();
@@ -404,7 +401,7 @@ TEST(TracedGlobalCopyNoDestructor) {
   ManualGCScope manual_gc;
   CcTest::InitializeVM();
   v8::Isolate* isolate = CcTest::isolate();
-  v8::HandleScope scope(isolate);
+  v8::HandleScope outer_scope(isolate);
   i::GlobalHandles* global_handles = CcTest::i_isolate()->global_handles();
 
   const size_t initial_count = global_handles->handles_count();
@@ -442,7 +439,7 @@ TEST(TracedGlobalInStdUnorderedMap) {
 
   std::unordered_map<int, v8::TracedGlobal<v8::Object>> map;
   {
-    v8::HandleScope scope(isolate);
+    v8::HandleScope new_scope(isolate);
     map.emplace(std::piecewise_construct, std::forward_as_tuple(1),
                 std::forward_as_tuple(isolate, v8::Object::New(isolate)));
   }
@@ -452,6 +449,10 @@ TEST(TracedGlobalInStdUnorderedMap) {
 }
 
 TEST(TracedGlobalToUnmodifiedJSObjectDiesOnMarkSweep) {
+  // When stressing incremental marking, a write barrier may keep the object
+  // alive.
+  if (FLAG_stress_incremental_marking) return;
+
   CcTest::InitializeVM();
   TracedGlobalTest(
       CcTest::isolate(), ConstructJSObject,
@@ -641,7 +642,7 @@ TEST(TracedGlobalIteration) {
   traced->SetWrapperClassId(57);
   TracedGlobalVisitor visitor;
   {
-    v8::HandleScope scope(isolate);
+    v8::HandleScope new_scope(isolate);
     tracer.IterateTracedGlobalHandles(&visitor);
   }
   CHECK_EQ(1, visitor.count());
@@ -673,7 +674,7 @@ TEST(TracedGlobalSetFinalizationCallbackScavenge) {
   ConstructJSApiObject(isolate, isolate->GetCurrentContext(), traced.get());
   CHECK(!traced->IsEmpty());
   {
-    v8::HandleScope scope(isolate);
+    v8::HandleScope new_scope(isolate);
     auto local = traced->Get(isolate);
     local->SetAlignedPointerInInternalField(0, reinterpret_cast<void*>(0x4));
     local->SetAlignedPointerInInternalField(1, reinterpret_cast<void*>(0x8));
@@ -695,7 +696,7 @@ TEST(TracedGlobalSetFinalizationCallbackMarkSweep) {
   ConstructJSApiObject(isolate, isolate->GetCurrentContext(), traced.get());
   CHECK(!traced->IsEmpty());
   {
-    v8::HandleScope scope(isolate);
+    v8::HandleScope new_scope(isolate);
     auto local = traced->Get(isolate);
     local->SetAlignedPointerInInternalField(0, reinterpret_cast<void*>(0x4));
     local->SetAlignedPointerInInternalField(1, reinterpret_cast<void*>(0x8));
@@ -707,13 +708,14 @@ TEST(TracedGlobalSetFinalizationCallbackMarkSweep) {
 
 TEST(TracePrologueCallingIntoV8WriteBarrier) {
   // Regression test: https://crbug.com/940003
+  if (!FLAG_incremental_marking) return;
   ManualGCScope manual_gc;
   CcTest::InitializeVM();
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
   v8::Global<v8::Array> global;
   {
-    v8::HandleScope scope(isolate);
+    v8::HandleScope new_scope(isolate);
     auto local = v8::Array::New(isolate, 10);
     global.Reset(isolate, local);
   }
@@ -738,7 +740,7 @@ TEST(TracedGlobalWithDestructor) {
   const size_t initial_count = global_handles->handles_count();
   auto* traced = new v8::TracedGlobal<v8::Object>();
   {
-    v8::HandleScope scope(isolate);
+    v8::HandleScope new_scope(isolate);
     v8::Local<v8::Object> object(ConstructTraceableJSApiObject(
         isolate->GetCurrentContext(), nullptr, nullptr));
     CHECK(traced->IsEmpty());
@@ -766,7 +768,7 @@ TEST(TracedGlobalNoDestructor) {
   char* memory = new char[sizeof(v8::TracedReference<v8::Value>)];
   auto* traced = new (memory) v8::TracedReference<v8::Value>();
   {
-    v8::HandleScope scope(isolate);
+    v8::HandleScope new_scope(isolate);
     v8::Local<v8::Value> object(ConstructTraceableJSApiObject(
         isolate->GetCurrentContext(), nullptr, nullptr));
     CHECK(traced->IsEmpty());
@@ -957,7 +959,10 @@ V8_NOINLINE void TracedReferenceNotifyEmptyStackTest(
   v8::Global<v8::Object> observer;
   CreateTracedReferenceInDeepStack(isolate, &observer);
   CHECK(!observer.IsEmpty());
-  tracer->NotifyEmptyEmbedderStack();
+  reinterpret_cast<i::Isolate*>(isolate)
+      ->heap()
+      ->local_embedder_heap_tracer()
+      ->NotifyEmptyEmbedderStack();
   heap::InvokeMarkSweep();
   CHECK(observer.IsEmpty());
 }

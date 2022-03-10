@@ -84,9 +84,7 @@ Maybe<bool> DsaKeyGenTraits::AdditionalConfig(
   params->params.modulus_bits = args[*offset].As<Uint32>()->Value();
   params->params.divisor_bits = args[*offset + 1].As<Int32>()->Value();
   if (params->params.divisor_bits < -1) {
-    char msg[1024];
-    snprintf(msg, sizeof(msg), "invalid value for divisor_bits");
-    THROW_ERR_OUT_OF_RANGE(env, msg);
+    THROW_ERR_OUT_OF_RANGE(env, "invalid value for divisor_bits");
     return Nothing<bool>();
   }
 
@@ -138,7 +136,7 @@ Maybe<bool> GetDsaKeyDetail(
   int type = EVP_PKEY_id(m_pkey.get());
   CHECK(type == EVP_PKEY_DSA);
 
-  DSA* dsa = EVP_PKEY_get0_DSA(m_pkey.get());
+  const DSA* dsa = EVP_PKEY_get0_DSA(m_pkey.get());
   CHECK_NOT_NULL(dsa);
 
   DSA_get0_pqg(dsa, &p, &q, nullptr);
@@ -168,6 +166,11 @@ namespace DSAAlg {
 void Initialize(Environment* env, Local<Object> target) {
   DsaKeyPairGenJob::Initialize(env, target);
   DSAKeyExportJob::Initialize(env, target);
+}
+
+void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
+  DsaKeyPairGenJob::RegisterExternalReferences(registry);
+  DSAKeyExportJob::RegisterExternalReferences(registry);
 }
 }  // namespace DSAAlg
 }  // namespace crypto

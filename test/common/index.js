@@ -19,7 +19,6 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-/* eslint-disable node-core/require-common-first, node-core/required-modules */
 /* eslint-disable node-core/crypto-check */
 'use strict';
 const process = global.process;  // Some tests tamper with the process global.
@@ -34,9 +33,14 @@ const util = require('util');
 const { isMainThread } = require('worker_threads');
 
 const tmpdir = require('./tmpdir');
-const bits = ['arm64', 'mips', 'mipsel', 'ppc64', 's390x', 'x64']
+const bits = ['arm64', 'mips', 'mipsel', 'ppc64', 'riscv64', 's390x', 'x64']
   .includes(process.arch) ? 64 : 32;
 const hasIntl = !!process.config.variables.v8_enable_i18n_support;
+
+const {
+  atob,
+  btoa
+} = require('buffer');
 
 // Some tests assume a umask of 0o022 so set that up front. Tests that need a
 // different umask will set it themselves.
@@ -51,6 +55,11 @@ const noop = () => {};
 const hasCrypto = Boolean(process.versions.openssl) &&
                   !process.env.NODE_SKIP_CRYPTO;
 
+const hasOpenSSL3 = hasCrypto &&
+    require('crypto').constants.OPENSSL_VERSION_NUMBER >= 805306368;
+
+const hasQuic = hasCrypto && !!process.config.variables.openssl_quic;
+
 // Check for flags. Skip this for workers (both, the `cluster` module and
 // `worker_threads`) and child processes.
 // If the binary was built without-ssl then the crypto flags are
@@ -59,12 +68,12 @@ if (process.argv.length === 2 &&
     !process.env.NODE_SKIP_FLAG_CHECK &&
     isMainThread &&
     hasCrypto &&
-    require.main &&
-    require('cluster').isPrimary) {
+    require('cluster').isPrimary &&
+    fs.existsSync(process.argv[1])) {
   // The copyright notice is relatively big and the flags could come afterwards.
   const bytesToRead = 1500;
   const buffer = Buffer.allocUnsafe(bytesToRead);
-  const fd = fs.openSync(require.main.filename, 'r');
+  const fd = fs.openSync(process.argv[1], 'r');
   const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead);
   fs.closeSync(fd);
   const source = buffer.toString('utf8', 0, bytesRead);
@@ -242,9 +251,6 @@ function platformTimeout(ms) {
 
   const armv = process.config.variables.arm_version;
 
-  if (armv === '6')
-    return multipliers.seven * ms;  // ARMv6
-
   if (armv === '7')
     return multipliers.two * ms;  // ARMv7
 
@@ -252,6 +258,8 @@ function platformTimeout(ms) {
 }
 
 let knownGlobals = [
+  atob,
+  btoa,
   clearImmediate,
   clearInterval,
   clearTimeout,
@@ -264,7 +272,7 @@ let knownGlobals = [
 
 // TODO(@jasnell): This check can be temporary. AbortController is
 // not currently supported in either Node.js 12 or 10, making it
-// difficult to run tests comparitively on those versions. Once
+// difficult to run tests comparatively on those versions. Once
 // all supported versions have AbortController as a global, this
 // check can be removed and AbortController can be added to the
 // knownGlobals list above.
@@ -273,6 +281,33 @@ if (global.AbortController)
 
 if (global.gc) {
   knownGlobals.push(global.gc);
+}
+
+if (global.performance) {
+  knownGlobals.push(global.performance);
+}
+if (global.PerformanceMark) {
+  knownGlobals.push(global.PerformanceMark);
+}
+if (global.PerformanceMeasure) {
+  knownGlobals.push(global.PerformanceMeasure);
+}
+
+// TODO(@ethan-arrowood): Similar to previous checks, this can be temporary
+// until v16.x is EOL. Once all supported versions have structuredClone we
+// can add this to the list above instead.
+if (global.structuredClone) {
+  knownGlobals.push(global.structuredClone);
+}
+
+if (global.fetch) {
+  knownGlobals.push(fetch);
+}
+if (hasCrypto && global.crypto) {
+  knownGlobals.push(global.crypto);
+  knownGlobals.push(global.Crypto);
+  knownGlobals.push(global.CryptoKey);
+  knownGlobals.push(global.SubtleCrypto);
 }
 
 function allowGlobals(...allowlist) {
@@ -371,10 +406,28 @@ function _mustCallInner(fn, criteria = 1, field) {
 
   mustCallChecks.push(context);
 
-  return function() {
+  const _return = function() { // eslint-disable-line func-style
     context.actual++;
     return fn.apply(this, arguments);
   };
+  // Function instances have own properties that may be relevant.
+  // Let's replicate those properties to the returned function.
+  // Refs: https://tc39.es/ecma262/#sec-function-instances
+  Object.defineProperties(_return, {
+    name: {
+      value: fn.name,
+      writable: false,
+      enumerable: false,
+      configurable: true,
+    },
+    length: {
+      value: fn.length,
+      writable: false,
+      enumerable: false,
+      configurable: true,
+    },
+  });
+  return _return;
 }
 
 function hasMultiLocalhost() {
@@ -464,12 +517,12 @@ function nodeProcessAborted(exitCode, signal) {
   const expectedSignals = ['SIGILL', 'SIGTRAP', 'SIGABRT'];
 
   // On Windows, 'aborts' are of 2 types, depending on the context:
-  // (i) Forced access violation, if --abort-on-uncaught-exception is on
-  // which corresponds to exit code 3221225477 (0xC0000005)
+  // (i) Exception breakpoint, if --abort-on-uncaught-exception is on
+  // which corresponds to exit code 2147483651 (0x80000003)
   // (ii) Otherwise, _exit(134) which is called in place of abort() due to
   // raising SIGABRT exiting with ambiguous exit code '3' by default
   if (isWindows)
-    expectedExitCodes = [0xC0000005, 134];
+    expectedExitCodes = [0x80000003, 134];
 
   // When using --abort-on-uncaught-exception, V8 will use
   // base::OS::Abort to terminate the process.
@@ -506,12 +559,16 @@ function _expectWarning(name, expected, code) {
     expected.forEach(([_, code]) => assert(code, expected));
   }
   return mustCall((warning) => {
-    const [ message, code ] = expected.shift();
+    const expectedProperties = expected.shift();
+    if (!expectedProperties) {
+      assert.fail(`Unexpected extra warning received: ${warning}`);
+    }
+    const [ message, code ] = expectedProperties;
     assert.strictEqual(warning.name, name);
     if (typeof message === 'string') {
       assert.strictEqual(warning.message, message);
     } else {
-      assert(message.test(warning.message));
+      assert.match(warning.message, message);
     }
     assert.strictEqual(warning.code, code);
   }, expected.length);
@@ -596,7 +653,7 @@ function getArrayBufferViews(buf) {
     Uint32Array,
     Float32Array,
     Float64Array,
-    DataView
+    DataView,
   ];
 
   for (const type of arrayBufferViews) {
@@ -610,10 +667,6 @@ function getArrayBufferViews(buf) {
 
 function getBufferSources(buf) {
   return [...getArrayBufferViews(buf), new Uint8Array(buf).buffer];
-}
-
-function disableCrashOnUnhandledRejection() {
-  process.on('unhandledRejection', () => {});
 }
 
 function getTTYfd() {
@@ -696,8 +749,8 @@ function gcUntil(name, condition) {
   });
 }
 
-function requireNoPackageJSONAbove() {
-  let possiblePackage = path.join(__dirname, '..', 'package.json');
+function requireNoPackageJSONAbove(dir = __dirname) {
+  let possiblePackage = path.join(dir, '..', 'package.json');
   let lastPackage = null;
   while (possiblePackage !== lastPackage) {
     if (fs.existsSync(possiblePackage)) {
@@ -716,7 +769,6 @@ const common = {
   canCreateSymLink,
   childShouldThrowAndAbort,
   createZeroFilledFile,
-  disableCrashOnUnhandledRejection,
   expectsError,
   expectWarning,
   gcUntil,
@@ -726,6 +778,8 @@ const common = {
   getTTYfd,
   hasIntl,
   hasCrypto,
+  hasOpenSSL3,
+  hasQuic,
   hasMultiLocalhost,
   invalidArgTypeHelper,
   isAIX,
@@ -756,11 +810,6 @@ const common = {
   skipIfEslintMissing,
   skipIfInspectorDisabled,
   skipIfWorker,
-
-  get enoughTestCpu() {
-    const cpus = require('os').cpus();
-    return Array.isArray(cpus) && (cpus.length > 1 || cpus[0].speed > 999);
-  },
 
   get enoughTestMem() {
     return require('os').totalmem() > 0x70000000; /* 1.75 Gb */
@@ -850,8 +899,14 @@ const common = {
       throw new Error('common.PORT cannot be used in a parallelized test');
     }
     return +process.env.NODE_COMMON_PORT || 12346;
-  }
+  },
 
+  /**
+   * Returns the EOL character used by this Git checkout.
+   */
+  get checkoutEOL() {
+    return fs.readFileSync(__filename).includes('\r\n') ? '\r\n' : '\n';
+  },
 };
 
 const validProperties = new Set(Object.keys(common));

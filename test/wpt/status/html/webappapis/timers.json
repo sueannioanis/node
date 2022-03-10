@@ -1,14 +1,5 @@
 {
   "negative-settimeout.any.js": {
-    "fail": "assert_unreached: Reached unreachable code"
-  },
-  "type-long-setinterval.any.js": {
-    "fail": "assert_unreached: Reached unreachable code"
-  },
-  "type-long-settimeout.any.js": {
-    "fail": "assert_unreached: Reached unreachable code"
-  },
-  "negative-setinterval.any.js": {
-    "fail": "assert_unreached: Reached unreachable code"
+    "fail": "unreliable in Node.js; Refs: https://github.com/nodejs/node/issues/37672"
   }
 }

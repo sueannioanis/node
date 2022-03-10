@@ -6,11 +6,10 @@
 #define V8_OBJECTS_FOREIGN_INL_H_
 
 #include "src/common/globals.h"
-#include "src/objects/foreign.h"
-
-#include "src/common/external-pointer-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
+#include "src/objects/foreign.h"
 #include "src/objects/objects-inl.h"
+#include "src/security/external-pointer-inl.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -29,6 +28,7 @@ bool Foreign::IsNormalized(Object value) {
 }
 
 DEF_GETTER(Foreign, foreign_address, Address) {
+  Isolate* isolate = GetIsolateForHeapSandbox(*this);
   return ReadExternalPointerField(kForeignAddressOffset, isolate,
                                   kForeignForeignAddressTag);
 }

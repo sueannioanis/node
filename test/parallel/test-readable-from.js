@@ -48,7 +48,7 @@ async function toReadablePromises() {
   const promises = [
     Promise.resolve('a'),
     Promise.resolve('b'),
-    Promise.resolve('c')
+    Promise.resolve('c'),
   ];
 
   const stream = Readable.from(promises);
@@ -126,7 +126,7 @@ async function toReadableOnDataNonObject() {
 }
 
 async function destroysTheStreamWhenThrowing() {
-  async function* generate() {
+  async function* generate() { // eslint-disable-line require-yield
     throw new Error('kaboom');
   }
 

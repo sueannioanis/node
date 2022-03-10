@@ -24,9 +24,17 @@
 #include "src/objects/elements.h"
 #include "src/objects/objects-inl.h"
 #include "src/profiler/heap-profiler.h"
+#include "src/security/vm-cage.h"
 #include "src/snapshot/snapshot.h"
 #include "src/tracing/tracing-category-observer.h"
+
+#if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-engine.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
+
+#if defined(V8_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
+#include "src/diagnostics/system-jit-win.h"
+#endif
 
 namespace v8 {
 namespace internal {
@@ -40,13 +48,12 @@ V8_DECLARE_ONCE(init_snapshot_once);
 
 v8::Platform* V8::platform_ = nullptr;
 
-bool V8::Initialize() {
-  InitializeOncePerProcess();
-  return true;
-}
+void V8::Initialize() { base::CallOnce(&init_once, &InitializeOncePerProcess); }
 
-void V8::TearDown() {
+void V8::Dispose() {
+#if V8_ENABLE_WEBASSEMBLY
   wasm::WasmEngine::GlobalTearDown();
+#endif  // V8_ENABLE_WEBASSEMBLY
 #if defined(USE_SIMULATOR)
   Simulator::GlobalTearDown();
 #endif
@@ -56,7 +63,57 @@ void V8::TearDown() {
   FlagList::ResetAllFlags();  // Frees memory held by string arguments.
 }
 
-void V8::InitializeOncePerProcessImpl() {
+#define DISABLE_FLAG(flag)                                                    \
+  if (FLAG_##flag) {                                                          \
+    PrintF(stderr,                                                            \
+           "Warning: disabling flag --" #flag " due to conflicting flags\n"); \
+    FLAG_##flag = false;                                                      \
+  }
+
+void V8::InitializeOncePerProcess() {
+  CHECK(platform_);
+
+#ifdef V8_VIRTUAL_MEMORY_CAGE
+  if (!GetProcessWideVirtualMemoryCage()->is_initialized()) {
+    // For now, we still allow the cage to be disabled even if V8 was compiled
+    // with V8_VIRTUAL_MEMORY_CAGE. This will eventually be forbidden.
+    CHECK(kAllowBackingStoresOutsideCage);
+    GetProcessWideVirtualMemoryCage()->Disable();
+  }
+#endif
+
+  // Update logging information before enforcing flag implications.
+  bool* log_all_flags[] = {&FLAG_turbo_profiling_log_builtins,
+                           &FLAG_log_all,
+                           &FLAG_log_api,
+                           &FLAG_log_code,
+                           &FLAG_log_code_disassemble,
+                           &FLAG_log_handles,
+                           &FLAG_log_suspect,
+                           &FLAG_log_source_code,
+                           &FLAG_log_function_events,
+                           &FLAG_log_internal_timer_events,
+                           &FLAG_log_deopt,
+                           &FLAG_log_ic,
+                           &FLAG_log_maps};
+  if (FLAG_log_all) {
+    // Enable all logging flags
+    for (auto* flag : log_all_flags) {
+      *flag = true;
+    }
+    FLAG_log = true;
+  } else if (!FLAG_log) {
+    // Enable --log if any log flag is set.
+    for (const auto* flag : log_all_flags) {
+      if (!*flag) continue;
+      FLAG_log = true;
+      break;
+    }
+    // Profiling flags depend on logging.
+    FLAG_log |= FLAG_perf_prof || FLAG_perf_basic_prof || FLAG_ll_prof ||
+                FLAG_prof || FLAG_prof_cpp;
+  }
+
   FlagList::EnforceFlagImplications();
 
   if (FLAG_predictable && FLAG_random_seed == 0) {
@@ -86,14 +143,30 @@ void V8::InitializeOncePerProcessImpl() {
   // continue exposing wasm on correctness fuzzers even in jitless mode.
   // TODO(jgruber): Remove this once / if wasm can run without executable
   // memory.
+#if V8_ENABLE_WEBASSEMBLY
   if (FLAG_jitless && !FLAG_correctness_fuzzer_suppressions) {
-    FLAG_expose_wasm = false;
+    DISABLE_FLAG(expose_wasm);
   }
+#endif
 
-  if (FLAG_regexp_interpret_all && FLAG_regexp_tier_up) {
-    // Turning off the tier-up strategy, because the --regexp-interpret-all and
-    // --regexp-tier-up flags are incompatible.
-    FLAG_regexp_tier_up = false;
+  // When fuzzing and concurrent compilation is enabled, disable Turbofan
+  // tracing flags since reading/printing heap state is not thread-safe and
+  // leads to false positives on TSAN bots.
+  // TODO(chromium:1205289): Teach relevant fuzzers to not pass TF tracing
+  // flags instead, and remove this section.
+  if (FLAG_fuzzing && FLAG_concurrent_recompilation) {
+    DISABLE_FLAG(trace_turbo);
+    DISABLE_FLAG(trace_turbo_graph);
+    DISABLE_FLAG(trace_turbo_scheduled);
+    DISABLE_FLAG(trace_turbo_reduction);
+    DISABLE_FLAG(trace_turbo_trimming);
+    DISABLE_FLAG(trace_turbo_jt);
+    DISABLE_FLAG(trace_turbo_ceq);
+    DISABLE_FLAG(trace_turbo_loop);
+    DISABLE_FLAG(trace_turbo_alloc);
+    DISABLE_FLAG(trace_all_uses);
+    DISABLE_FLAG(trace_representation);
+    DISABLE_FLAG(trace_turbo_stack_accesses);
   }
 
   // The --jitless and --interpreted-frames-native-stack flags are incompatible
@@ -105,9 +178,15 @@ void V8::InitializeOncePerProcessImpl() {
 
   if (FLAG_random_seed) SetRandomMmapSeed(FLAG_random_seed);
 
+  if (FLAG_print_flag_values) FlagList::PrintValues();
+
+  // Initialize the default FlagList::Hash
+  FlagList::Hash();
+
 #if defined(V8_USE_PERFETTO)
-  TrackEvent::Register();
+  if (perfetto::Tracing::IsInitialized()) TrackEvent::Register();
 #endif
+  IsolateAllocator::InitializeOncePerProcess();
   Isolate::InitializeOncePerProcess();
 
 #if defined(USE_SIMULATOR)
@@ -117,11 +196,11 @@ void V8::InitializeOncePerProcessImpl() {
   ElementsAccessor::InitializeOncePerProcess();
   Bootstrapper::InitializeOncePerProcess();
   CallDescriptors::InitializeOncePerProcess();
+#if V8_ENABLE_WEBASSEMBLY
   wasm::WasmEngine::InitializeOncePerProcess();
-}
+#endif  // V8_ENABLE_WEBASSEMBLY
 
-void V8::InitializeOncePerProcess() {
-  base::CallOnce(&init_once, &InitializeOncePerProcessImpl);
+  ExternalReferenceTable::InitializeOncePerProcess();
 }
 
 void V8::InitializePlatform(v8::Platform* platform) {
@@ -130,15 +209,40 @@ void V8::InitializePlatform(v8::Platform* platform) {
   platform_ = platform;
   v8::base::SetPrintStackTrace(platform_->GetStackTracePrinter());
   v8::tracing::TracingCategoryObserver::SetUp();
-  cppgc::InitializeProcess(platform->GetPageAllocator());
+#if defined(V8_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
+  if (FLAG_enable_system_instrumentation) {
+    // TODO(sartang@microsoft.com): Move to platform specific diagnostics object
+    v8::internal::ETWJITInterface::Register();
+  }
+#endif
 }
 
-void V8::ShutdownPlatform() {
+#ifdef V8_VIRTUAL_MEMORY_CAGE
+bool V8::InitializeVirtualMemoryCage() {
+  // Platform must have been initialized already.
   CHECK(platform_);
+  v8::VirtualAddressSpace* vas = GetPlatformVirtualAddressSpace();
+  return GetProcessWideVirtualMemoryCage()->Initialize(vas);
+}
+#endif
+
+void V8::DisposePlatform() {
+  CHECK(platform_);
+#if defined(V8_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
+  if (FLAG_enable_system_instrumentation) {
+    v8::internal::ETWJITInterface::Unregister();
+  }
+#endif
   v8::tracing::TracingCategoryObserver::TearDown();
   v8::base::SetPrintStackTrace(nullptr);
+
+#ifdef V8_VIRTUAL_MEMORY_CAGE
+  // TODO(chromium:1218005) alternatively, this could move to its own
+  // public TearDownVirtualMemoryCage function.
+  GetProcessWideVirtualMemoryCage()->TearDown();
+#endif
+
   platform_ = nullptr;
-  cppgc::ShutdownProcess();
 }
 
 v8::Platform* V8::GetCurrentPlatform() {

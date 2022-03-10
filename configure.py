@@ -14,7 +14,6 @@ import shutil
 import bz2
 import io
 
-from distutils.spawn import find_executable as which
 from distutils.version import StrictVersion
 
 # If not run from node/, cd to node/.
@@ -38,7 +37,9 @@ import nodedownload
 sys.path.insert(0, 'tools')
 import getmoduleversion
 import getnapibuildversion
+import getsharedopensslhasquic
 from gyp_node import run_gyp
+from utils import SearchFiles
 
 # parse our options
 parser = argparse.ArgumentParser()
@@ -46,7 +47,7 @@ parser = argparse.ArgumentParser()
 valid_os = ('win', 'mac', 'solaris', 'freebsd', 'openbsd', 'linux',
             'android', 'aix', 'cloudabi')
 valid_arch = ('arm', 'arm64', 'ia32', 'mips', 'mipsel', 'mips64el', 'ppc',
-              'ppc64', 'x32','x64', 'x86', 'x86_64', 's390x')
+              'ppc64', 'x64', 'x86', 'x86_64', 's390x', 'riscv64', 'loong64')
 valid_arm_float_abi = ('soft', 'softfp', 'hard')
 valid_arm_fpu = ('vfp', 'vfpv3', 'vfpv3-d16', 'neon')
 valid_mips_arch = ('loongson', 'r1', 'r2', 'r6', 'rx')
@@ -61,6 +62,9 @@ shared_optgroup = parser.add_argument_group("Shared libraries",
     "Flags that allows you to control whether you want to build against "
     "built-in dependencies or its shared representations. If necessary, "
     "provide multiple libraries with comma.")
+static_optgroup = parser.add_argument_group("Static libraries",
+    "Flags that allows you to control whether you want to build against "
+    "additional static libraries.")
 intl_optgroup = parser.add_argument_group("Internationalization",
     "Flags that lets you enable i18n features in Node.js as well as which "
     "library you want to build against.")
@@ -167,7 +171,7 @@ parser.add_argument("--enable-lto",
     dest="enable_lto",
     default=None,
     help="Enable compiling with lto of a binary. This feature is only available "
-         "on linux with gcc and g++ 5.4.1 or newer.")
+         "with gcc 5.4.1+ or clang 3.9.1+.")
 
 parser.add_argument("--link-module",
     action="append",
@@ -187,11 +191,6 @@ parser.add_argument("--openssl-no-asm",
     dest="openssl_no_asm",
     default=None,
     help="Do not build optimized assembly for OpenSSL")
-
-parser.add_argument('--openssl-fips',
-    action='store',
-    dest='openssl_fips',
-    help='Build OpenSSL using FIPS canister .o file in supplied folder')
 
 parser.add_argument('--openssl-is-fips',
     action='store_true',
@@ -283,6 +282,50 @@ shared_optgroup.add_argument('--shared-nghttp2-libpath',
     dest='shared_nghttp2_libpath',
     help='a directory to search for the shared nghttp2 DLLs')
 
+shared_optgroup.add_argument('--shared-nghttp3',
+    action='store_true',
+    dest='shared_nghttp3',
+    default=None,
+    help='link to a shared nghttp3 DLL instead of static linking')
+
+shared_optgroup.add_argument('--shared-nghttp3-includes',
+    action='store',
+    dest='shared_nghttp3_includes',
+    help='directory containing nghttp3 header files')
+
+shared_optgroup.add_argument('--shared-nghttp3-libname',
+    action='store',
+    dest='shared_nghttp3_libname',
+    default='nghttp3',
+    help='alternative lib name to link to [default: %(default)s]')
+
+shared_optgroup.add_argument('--shared-nghttp3-libpath',
+    action='store',
+    dest='shared_nghttp3_libpath',
+    help='a directory to search for the shared nghttp3 DLLs')
+
+shared_optgroup.add_argument('--shared-ngtcp2',
+    action='store_true',
+    dest='shared_ngtcp2',
+    default=None,
+    help='link to a shared ngtcp2 DLL instead of static linking')
+
+shared_optgroup.add_argument('--shared-ngtcp2-includes',
+    action='store',
+    dest='shared_ngtcp2_includes',
+    help='directory containing ngtcp2 header files')
+
+shared_optgroup.add_argument('--shared-ngtcp2-libname',
+    action='store',
+    dest='shared_ngtcp2_libname',
+    default='ngtcp2',
+    help='alternative lib name to link to [default: %(default)s]')
+
+shared_optgroup.add_argument('--shared-ngtcp2-libpath',
+    action='store',
+    dest='shared_ngtcp2_libpath',
+    help='a directory to search for the shared tcp2 DLLs')
+
 shared_optgroup.add_argument('--shared-openssl',
     action='store_true',
     dest='shared_openssl',
@@ -372,6 +415,13 @@ shared_optgroup.add_argument('--shared-cares-libpath',
     help='a directory to search for the shared cares DLL')
 
 parser.add_argument_group(shared_optgroup)
+
+static_optgroup.add_argument('--static-zoslib-gyp',
+    action='store',
+    dest='static_zoslib_gyp',
+    help='path to zoslib.gyp file for includes and to link to static zoslib libray')
+
+parser.add_argument_group(static_optgroup)
 
 parser.add_argument('--systemtap-includes',
     action='store',
@@ -595,6 +645,12 @@ parser.add_argument('--without-npm',
     default=None,
     help='do not install the bundled npm (package manager)')
 
+parser.add_argument('--without-corepack',
+    action='store_true',
+    dest='without_corepack',
+    default=None,
+    help='do not install the bundled Corepack')
+
 # Dummy option for backwards compatibility
 parser.add_argument('--without-report',
     action='store_true',
@@ -657,7 +713,8 @@ parser.add_argument('--no-browser-globals',
     dest='no_browser_globals',
     default=None,
     help='do not export browser globals like setTimeout, console, etc. ' +
-         '(This mode is not officially supported for regular applications)')
+         '(This mode is deprecated and not officially supported for regular ' +
+         'applications)')
 
 parser.add_argument('--without-inspector',
     action='store_true',
@@ -717,6 +774,13 @@ parser.add_argument('--v8-enable-object-print',
     dest='v8_enable_object_print',
     default=True,
     help='compile V8 with auxiliar functions for native debuggers')
+
+parser.add_argument('--v8-enable-hugepage',
+    action='store_true',
+    dest='v8_enable_hugepage',
+    default=None,
+    help='Enable V8 transparent hugepage support. This feature is only '+
+         'available on Linux platform.')
 
 parser.add_argument('--node-builtin-modules-path',
     action='store',
@@ -782,7 +846,7 @@ def pkg_config(pkg):
   otherwise (None, None, None, None)"""
   pkg_config = os.environ.get('PKG_CONFIG', 'pkg-config')
   args = []  # Print pkg-config warnings on first round.
-  retval = ()
+  retval = []
   for flag in ['--libs-only-l', '--cflags-only-I',
                '--libs-only-L', '--modversion']:
     args += [flag]
@@ -797,9 +861,9 @@ def pkg_config(pkg):
     except OSError as e:
       if e.errno != errno.ENOENT: raise e  # Unexpected error.
       return (None, None, None, None)  # No pkg-config/pkgconf installed.
-    retval += (val,)
+    retval.append(val)
     args = ['--silence-errors']
-  return retval
+  return tuple(retval)
 
 
 def try_check_compiler(cc, lang):
@@ -812,7 +876,11 @@ def try_check_compiler(cc, lang):
   proc.stdin.write(b'__clang__ __GNUC__ __GNUC_MINOR__ __GNUC_PATCHLEVEL__ '
                    b'__clang_major__ __clang_minor__ __clang_patchlevel__')
 
-  values = (to_utf8(proc.communicate()[0]).split() + ['0'] * 7)[0:7]
+  if sys.platform == 'zos':
+    values = (to_utf8(proc.communicate()[0]).split('\n')[-2].split() + ['0'] * 7)[0:7]
+  else:
+    values = (to_utf8(proc.communicate()[0]).split() + ['0'] * 7)[0:7]
+
   is_clang = values[0] == '1'
   gcc_version = tuple(map(int, values[1:1+3]))
   clang_version = tuple(map(int, values[4:4+3])) if is_clang else None
@@ -902,6 +970,7 @@ def get_gas_version(cc):
 # quite prepared to go that far yet.
 def check_compiler(o):
   if sys.platform == 'win32':
+    o['variables']['llvm_version'] = '0.0'
     if not options.openssl_no_asm and options.dest_cpu in ('x86', 'x64'):
       nasm_version = get_nasm_version('nasm')
       o['variables']['nasm_version'] = nasm_version
@@ -915,8 +984,8 @@ def check_compiler(o):
                 ('clang ' if is_clang else '', CXX, version_str))
   if not ok:
     warn('failed to autodetect C++ compiler version (CXX=%s)' % CXX)
-  elif clang_version < (8, 0, 0) if is_clang else gcc_version < (6, 3, 0):
-    warn('C++ compiler (CXX=%s, %s) too old, need g++ 6.3.0 or clang++ 8.0.0' %
+  elif clang_version < (8, 0, 0) if is_clang else gcc_version < (8, 3, 0):
+    warn('C++ compiler (CXX=%s, %s) too old, need g++ 8.3.0 or clang++ 8.0.0' %
          (CXX, version_str))
 
   ok, is_clang, clang_version, gcc_version = try_check_compiler(CC, 'c')
@@ -998,12 +1067,9 @@ def is_arm_hard_float_abi():
 def host_arch_cc():
   """Host architecture check using the CC command."""
 
-  if sys.platform.startswith('aix'):
-    # we only support gcc at this point and the default on AIX
-    # would be xlc so hard code gcc
-    k = cc_macros('gcc')
-  else:
-    k = cc_macros(os.environ.get('CC_host'))
+  if sys.platform.startswith('zos'):
+    return 's390x'
+  k = cc_macros(os.environ.get('CC_host'))
 
   matchup = {
     '__aarch64__' : 'arm64',
@@ -1015,6 +1081,8 @@ def host_arch_cc():
     '__PPC__'     : 'ppc64',
     '__x86_64__'  : 'x64',
     '__s390x__'   : 's390x',
+    '__riscv'     : 'riscv',
+    '__loongarch64': 'loong64',
   }
 
   rtn = 'ia32' # default
@@ -1026,6 +1094,12 @@ def host_arch_cc():
 
   if rtn == 'mipsel' and '_LP64' in k:
     rtn = 'mips64el'
+
+  if rtn == 'riscv':
+    if k['__riscv_xlen'] == '64':
+      rtn = 'riscv64'
+    else:
+      rtn = 'riscv32'
 
   return rtn
 
@@ -1081,21 +1155,40 @@ def configure_mips(o, target_arch):
   host_byteorder = 'little' if target_arch in ('mipsel', 'mips64el') else 'big'
   o['variables']['v8_host_byteorder'] = host_byteorder
 
+def configure_zos(o):
+  o['variables']['node_static_zoslib'] = b(True)
+  if options.static_zoslib_gyp:
+    # Apply to all Node.js components for now
+    o['variables']['zoslib_include_dir'] = os.path.dirname(options.static_zoslib_gyp) + '/include'
+    o['include_dirs'] += [o['variables']['zoslib_include_dir']]
+  else:
+    raise Exception('--static-zoslib-gyp=<path to zoslib.gyp file> is required.')
+
+def clang_version_ge(version_checked):
+  for compiler in [(CC, 'c'), (CXX, 'c++')]:
+    ok, is_clang, clang_version, gcc_version = \
+      try_check_compiler(compiler[0], compiler[1])
+    if is_clang and clang_version >= version_checked:
+      return True
+  return False
 
 def gcc_version_ge(version_checked):
   for compiler in [(CC, 'c'), (CXX, 'c++')]:
-    ok, is_clang, clang_version, compiler_version = \
+    ok, is_clang, clang_version, gcc_version = \
       try_check_compiler(compiler[0], compiler[1])
-    if is_clang or compiler_version < version_checked:
+    if is_clang or gcc_version < version_checked:
       return False
   return True
 
+def configure_node_lib_files(o):
+  o['variables']['node_library_files'] = SearchFiles('lib', 'js')
 
 def configure_node(o):
   if options.dest_os == 'android':
     o['variables']['OS'] = 'android'
   o['variables']['node_prefix'] = options.prefix
   o['variables']['node_install_npm'] = b(not options.without_npm)
+  o['variables']['node_install_corepack'] = b(not options.without_corepack)
   o['variables']['debug_node'] = b(options.debug_node)
   o['default_configuration'] = 'Debug' if options.debug else 'Release'
   o['variables']['error_on_warn'] = b(options.error_on_warn)
@@ -1140,6 +1233,8 @@ def configure_node(o):
     configure_arm(o)
   elif target_arch in ('mips', 'mipsel', 'mips64el'):
     configure_mips(o, target_arch)
+  elif sys.platform == 'zos':
+    configure_zos(o)
 
   if flavor == 'aix':
     o['variables']['node_target_type'] = 'static_library'
@@ -1167,18 +1262,19 @@ def configure_node(o):
   o['variables']['enable_pgo_generate'] = b(options.enable_pgo_generate)
   o['variables']['enable_pgo_use']      = b(options.enable_pgo_use)
 
-  if flavor != 'linux' and (options.enable_lto):
+  if flavor == 'win' and (options.enable_lto):
     raise Exception(
-      'The lto option is supported only on linux.')
+      'Use Link Time Code Generation instead.')
 
-  if flavor == 'linux':
-    if options.enable_lto:
-      version_checked = (5, 4, 1)
-      if not gcc_version_ge(version_checked):
-        version_checked_str = ".".join(map(str, version_checked))
-        raise Exception(
-          'The option --enable-lto is supported for gcc and gxx %s'
-          ' or newer only.' % (version_checked_str))
+  if options.enable_lto:
+    gcc_version_checked = (5, 4, 1)
+    clang_version_checked = (3, 9, 1)
+    if not gcc_version_ge(gcc_version_checked) and not clang_version_ge(clang_version_checked):
+      gcc_version_checked_str = ".".join(map(str, gcc_version_checked))
+      clang_version_checked_str = ".".join(map(str, clang_version_checked))
+      raise Exception(
+        'The option --enable-lto is supported for gcc %s+'
+        'or clang %s+ only.' % (gcc_version_checked_str, clang_version_checked_str))
 
   o['variables']['enable_lto'] = b(options.enable_lto)
 
@@ -1251,6 +1347,8 @@ def configure_node(o):
     shlib_suffix = '%s.dylib'
   elif sys.platform.startswith('aix'):
     shlib_suffix = '%s.a'
+  elif sys.platform.startswith('zos'):
+    shlib_suffix = '%s.x'
   else:
     shlib_suffix = 'so.%s'
   if '%s' in shlib_suffix:
@@ -1320,6 +1418,7 @@ def configure_library(lib, output, pkgname=None):
 
 
 def configure_v8(o):
+  o['variables']['v8_enable_webassembly'] = 1
   o['variables']['v8_enable_lite_mode'] = 1 if options.v8_lite_mode else 0
   o['variables']['v8_enable_gdbjit'] = 1 if options.gdb else 0
   o['variables']['v8_no_strict_aliasing'] = 1  # Work around compiler bugs.
@@ -1340,14 +1439,20 @@ def configure_v8(o):
     o['variables']['test_isolation_mode'] = 'noop'  # Needed by d8.gyp.
   if options.without_bundled_v8 and options.enable_d8:
     raise Exception('--enable-d8 is incompatible with --without-bundled-v8.')
-
+  if options.static_zoslib_gyp:
+    o['variables']['static_zoslib_gyp'] = options.static_zoslib_gyp
+  if flavor != 'linux' and options.v8_enable_hugepage:
+    raise Exception('--v8-enable-hugepage is supported only on linux.')
+  o['variables']['v8_enable_hugepage'] = 1 if options.v8_enable_hugepage else 0
 
 def configure_openssl(o):
   variables = o['variables']
   variables['node_use_openssl'] = b(not options.without_ssl)
   variables['node_shared_openssl'] = b(options.shared_openssl)
+  variables['node_shared_ngtcp2'] = b(options.shared_ngtcp2)
+  variables['node_shared_nghttp3'] = b(options.shared_nghttp3)
   variables['openssl_is_fips'] = b(options.openssl_is_fips)
-  variables['openssl_fips'] = ''
+  variables['node_fipsinstall'] = b(False)
 
   if options.openssl_no_asm:
     variables['openssl_no_asm'] = 1
@@ -1359,8 +1464,8 @@ def configure_openssl(o):
       without_ssl_error('--shared-openssl')
     if options.openssl_no_asm:
       without_ssl_error('--openssl-no-asm')
-    if options.openssl_fips:
-      without_ssl_error('--openssl-fips')
+    if options.openssl_is_fips:
+      without_ssl_error('--openssl-is-fips')
     if options.openssl_default_cipher_list:
       without_ssl_error('--openssl-default-cipher-list')
     return
@@ -1400,8 +1505,18 @@ def configure_openssl(o):
   if options.openssl_no_asm and options.shared_openssl:
     error('--openssl-no-asm is incompatible with --shared-openssl')
 
-  if options.openssl_fips or options.openssl_fips == '':
-     error('FIPS is not supported in this version of Node.js')
+  if options.openssl_is_fips and not options.shared_openssl:
+    o['defines'] += ['OPENSSL_FIPS']
+    variables['node_fipsinstall'] = b(True)
+
+  if options.shared_openssl:
+    has_quic = getsharedopensslhasquic.get_has_quic(options.__dict__['shared_openssl_includes'])
+  else:
+    has_quic = getsharedopensslhasquic.get_has_quic('deps/openssl/openssl/include')
+
+  variables['openssl_quic'] = b(has_quic)
+  if has_quic:
+    o['defines'] += ['NODE_OPENSSL_HAS_QUIC']
 
   configure_library('openssl', o)
 
@@ -1435,7 +1550,7 @@ def glob_to_var(dir_base, dir_sub, patch_dir):
   for ent in files:
     (path, dirs, files) = ent
     for file in files:
-      if file.endswith('.cpp') or file.endswith('.c') or file.endswith('.h'):
+      if file.endswith(('.cpp', '.c', '.h')):
         # srcfile uses "slash" as dir separator as its output is consumed by gyp
         srcfile = '%s/%s' % (dir_sub, file)
         if patch_dir:
@@ -1731,6 +1846,9 @@ def configure_intl(o):
   elif sys.platform.startswith('aix'):
     icu_config['variables']['icu_asm_ext'] = 'S'
     icu_config['variables']['icu_asm_opts'] = [ '-a', 'xlc' ]
+  elif sys.platform == 'zos':
+    icu_config['variables']['icu_asm_ext'] = 'S'
+    icu_config['variables']['icu_asm_opts'] = [ '-a', 'zos' ]
   else:
     # assume GCC-compatible asm is OK
     icu_config['variables']['icu_asm_ext'] = 'S'
@@ -1776,11 +1894,11 @@ def make_bin_override():
   if sys.platform == 'win32':
     raise Exception('make_bin_override should not be called on win32.')
   # If the system python is not the python we are running (which should be
-  # python 2), then create a directory with a symlink called `python` to our
+  # python 3), then create a directory with a symlink called `python` to our
   # sys.executable. This directory will be prefixed to the PATH, so that
   # other tools that shell out to `python` will use the appropriate python
 
-  which_python = which('python')
+  which_python = shutil.which('python')
   if (which_python and
       os.path.realpath(which_python) == os.path.realpath(sys.executable)):
     return
@@ -1824,6 +1942,7 @@ if (options.dest_os):
 flavor = GetFlavor(flavor_params)
 
 configure_node(output)
+configure_node_lib_files(output)
 configure_napi(output)
 configure_library('zlib', output)
 configure_library('http_parser', output)
@@ -1831,6 +1950,8 @@ configure_library('libuv', output)
 configure_library('brotli', output, pkgname=['libbrotlidec', 'libbrotlienc'])
 configure_library('cares', output, pkgname='libcares')
 configure_library('nghttp2', output, pkgname='libnghttp2')
+configure_library('nghttp3', output, pkgname='libnghttp3')
+configure_library('ngtcp2', output, pkgname='libngtcp2')
 configure_v8(output)
 configure_openssl(output)
 configure_intl(output)
@@ -1846,15 +1967,6 @@ output['variables']['ossfuzz'] = b(options.ossfuzz)
 variables = output['variables']
 del output['variables']
 variables['is_debug'] = B(options.debug)
-
-# make_global_settings for special FIPS linking
-# should not be used to compile modules in node-gyp
-config_fips = { 'make_global_settings' : [] }
-if 'make_fips_settings' in output:
-  config_fips['make_global_settings'] = output['make_fips_settings']
-  del output['make_fips_settings']
-  write('config_fips.gypi', do_not_edit +
-        pprint.pformat(config_fips, indent=2) + '\n')
 
 # make_global_settings should be a root level element too
 if 'make_global_settings' in output:
@@ -1914,6 +2026,7 @@ write('config.mk', do_not_edit + config_str)
 
 
 gyp_args = ['--no-parallel', '-Dconfiguring_node=1']
+gyp_args += ['-Dbuild_type=' + config['BUILDTYPE']]
 
 if options.use_ninja:
   gyp_args += ['-f', 'ninja']
@@ -1925,8 +2038,12 @@ else:
 if options.compile_commands_json:
   gyp_args += ['-f', 'compile_commands_json']
 
-# pass the leftover positional arguments to GYP
-gyp_args += args
+# override the variable `python` defined in common.gypi
+if bin_override is not None:
+  gyp_args += ['-Dpython=' + sys.executable]
+
+# pass the leftover non-whitespace positional arguments to GYP
+gyp_args += [arg for arg in args if not str.isspace(arg)]
 
 if warn.warned and not options.verbose:
   warn('warnings were emitted in the configure phase')

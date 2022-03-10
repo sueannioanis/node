@@ -63,7 +63,7 @@ assert.strictEqual(tracing.enabled, true);
 
 assert.strictEqual(getEnabledCategories(),
                    [
-                     ...[enabledCategories].filter((_) => !!_), 'node.perf'
+                     ...[enabledCategories].filter((_) => !!_), 'node.perf',
                    ].join(','));
 
 tracing.disable();
@@ -142,7 +142,7 @@ function testApiInChildProcess(execArgs, cb) {
                            '--expose-gc',
                            '--expose-internals',
                            '--no-warnings',
-                           ...execArgs
+                           ...execArgs,
                          ]
                        });
 
@@ -161,16 +161,18 @@ function testApiInChildProcess(execArgs, cb) {
       traces.forEach((trace) => {
         assert.strictEqual(trace.pid, proc.pid);
         switch (trace.ph) {
-          case 'b':
+          case 'b': {
             const expectedBegin = expectedBegins.shift();
             assert.strictEqual(trace.cat, expectedBegin.cat);
             assert.strictEqual(trace.name, expectedBegin.name);
             break;
-          case 'e':
+          }
+          case 'e': {
             const expectedEnd = expectedEnds.shift();
             assert.strictEqual(trace.cat, expectedEnd.cat);
             assert.strictEqual(trace.name, expectedEnd.name);
             break;
+          }
           default:
             assert.fail('Unexpected trace event phase');
         }

@@ -21,6 +21,7 @@ namespace internal {
 
 class BreakPoint;
 class BytecodeArray;
+class StructBodyDescriptor;
 
 #include "torque-generated/src/objects/debug-objects-tq.inc"
 
@@ -37,16 +38,16 @@ class DebugInfo : public TorqueGeneratedDebugInfo<DebugInfo, Struct> {
   // --- Debug execution ---
   // -----------------------
 
-  enum ExecutionMode { kBreakpoints = 0, kSideEffects = kDebugExecutionMode };
+  enum ExecutionMode : uint8_t {
+    kBreakpoints = 0,
+    kSideEffects = kDebugExecutionMode
+  };
 
   // Returns current debug execution mode. Debug execution mode defines by
   // applied to bytecode patching. False for breakpoints, true for side effect
   // checks.
   ExecutionMode DebugExecutionMode() const;
   void SetDebugExecutionMode(ExecutionMode value);
-
-  DECL_RELEASE_ACQUIRE_ACCESSORS(debug_bytecode_array, HeapObject)
-  DECL_RELEASE_ACQUIRE_ACCESSORS(original_bytecode_array, HeapObject)
 
   // Specifies whether the associated function has an instrumented bytecode
   // array. If so, OriginalBytecodeArray returns the non-instrumented bytecode,
@@ -132,6 +133,8 @@ class DebugInfo : public TorqueGeneratedDebugInfo<DebugInfo, Struct> {
 
   static const int kEstimatedNofBreakPointsInFunction = 4;
 
+  using BodyDescriptor = StructBodyDescriptor;
+
  private:
   // Get the break point info object for a source position.
   Object GetBreakPointInfo(Isolate* isolate, int source_position);
@@ -163,6 +166,8 @@ class BreakPointInfo
 
   int GetStatementPosition(Handle<DebugInfo> debug_info);
 
+  using BodyDescriptor = StructBodyDescriptor;
+
   TQ_OBJECT_CONSTRUCTORS(BreakPointInfo)
 };
 
@@ -170,10 +175,6 @@ class BreakPointInfo
 class CoverageInfo
     : public TorqueGeneratedCoverageInfo<CoverageInfo, HeapObject> {
  public:
-  int StartSourcePosition(int slot_index) const;
-  int EndSourcePosition(int slot_index) const;
-  int BlockCount(int slot_index) const;
-
   void InitializeSlot(int slot_index, int start_pos, int end_pos);
   void ResetBlockCount(int slot_index);
 
@@ -191,15 +192,14 @@ class CoverageInfo
   // Description of layout within each slot.
   using Slot = TorqueGeneratedCoverageInfoSlotOffsets;
 
- private:
-  int SlotFieldOffset(int slot_index, int field_offset) const;
-
   TQ_OBJECT_CONSTRUCTORS(CoverageInfo)
 };
 
 // Holds breakpoint related information. This object is used by inspector.
 class BreakPoint : public TorqueGeneratedBreakPoint<BreakPoint, Struct> {
  public:
+  using BodyDescriptor = StructBodyDescriptor;
+
   TQ_OBJECT_CONSTRUCTORS(BreakPoint)
 };
 

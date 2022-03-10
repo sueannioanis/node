@@ -71,10 +71,12 @@ enum FixedArraySubInstanceType {
 class FixedArrayBase
     : public TorqueGeneratedFixedArrayBase<FixedArrayBase, HeapObject> {
  public:
-  // Get and set the length using acquire loads and release stores.
-  DECL_SYNCHRONIZED_INT_ACCESSORS(length)
+  // Forward declare the non-atomic (set_)length defined in torque.
+  using TorqueGeneratedFixedArrayBase::length;
+  using TorqueGeneratedFixedArrayBase::set_length;
+  DECL_RELEASE_ACQUIRE_INT_ACCESSORS(length)
 
-  inline Object unchecked_synchronized_length() const;
+  inline Object unchecked_length(AcquireLoadTag) const;
 
   static int GetMaxLengthForNewSpaceAllocation(ElementsKind kind);
 
@@ -101,7 +103,7 @@ class FixedArray
  public:
   // Setter and getter for elements.
   inline Object get(int index) const;
-  inline Object get(IsolateRoot isolate, int index) const;
+  inline Object get(PtrComprCageBase cage_base, int index) const;
 
   static inline Handle<Object> get(FixedArray array, int index,
                                    Isolate* isolate);
@@ -111,28 +113,39 @@ class FixedArray
       Isolate* isolate, Handle<FixedArray> array, int index,
       Handle<Object> value);
 
-  // Synchronized setters and getters.
-  inline Object synchronized_get(int index) const;
-  inline Object synchronized_get(IsolateRoot isolate, int index) const;
-  // Currently only Smis are written with release semantics, hence we can avoid
-  // a write barrier.
-  inline void synchronized_set(int index, Smi value);
+  // Relaxed accessors.
+  inline Object get(int index, RelaxedLoadTag) const;
+  inline Object get(PtrComprCageBase cage_base, int index,
+                    RelaxedLoadTag) const;
+  inline void set(int index, Object value, RelaxedStoreTag,
+                  WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline void set(int index, Smi value, RelaxedStoreTag);
+
+  // Acquire/release accessors.
+  inline Object get(int index, AcquireLoadTag) const;
+  inline Object get(PtrComprCageBase cage_base, int index,
+                    AcquireLoadTag) const;
+  inline void set(int index, Object value, ReleaseStoreTag,
+                  WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline void set(int index, Smi value, ReleaseStoreTag);
 
   // Setter that uses write barrier.
   inline void set(int index, Object value);
   inline bool is_the_hole(Isolate* isolate, int index);
 
   // Setter that doesn't need write barrier.
-#if defined(_WIN32) && !defined(_WIN64)
+#if !defined(_WIN32) || (defined(_WIN64) && _MSC_VER < 1930 && __cplusplus < 201703L)
+  inline void set(int index, Smi value);
+#else
   inline void set(int index, Smi value) {
+#if !defined(_WIN32)
     DCHECK_NE(map(), GetReadOnlyRoots().fixed_cow_array_map());
+#endif
     DCHECK_LT(static_cast<unsigned>(index), static_cast<unsigned>(length()));
     DCHECK(Object(value).IsSmi());
     int offset = OffsetOfElementAt(index);
     RELAXED_WRITE_FIELD(*this, offset, value);
   }
-#else
-  inline void set(int index, Smi value);
 #endif
 
   // Setter with explicit barrier mode.
@@ -279,14 +292,20 @@ class WeakFixedArray
     : public TorqueGeneratedWeakFixedArray<WeakFixedArray, HeapObject> {
  public:
   inline MaybeObject Get(int index) const;
-  inline MaybeObject Get(IsolateRoot isolate, int index) const;
+  inline MaybeObject Get(PtrComprCageBase cage_base, int index) const;
 
   inline void Set(
       int index, MaybeObject value,
       WriteBarrierMode mode = WriteBarrierMode::UPDATE_WRITE_BARRIER);
 
-  // Get and set the length using acquire loads and release stores.
-  DECL_SYNCHRONIZED_INT_ACCESSORS(length)
+  static inline Handle<WeakFixedArray> EnsureSpace(Isolate* isolate,
+                                                   Handle<WeakFixedArray> array,
+                                                   int length);
+
+  // Forward declare the non-atomic (set_)length defined in torque.
+  using TorqueGeneratedWeakFixedArray::length;
+  using TorqueGeneratedWeakFixedArray::set_length;
+  DECL_RELEASE_ACQUIRE_INT_ACCESSORS(length)
 
   // Gives access to raw memory which stores the array's data.
   inline MaybeObjectSlot data_start();
@@ -354,13 +373,14 @@ class WeakArrayList
   V8_EXPORT_PRIVATE void Compact(Isolate* isolate);
 
   inline MaybeObject Get(int index) const;
-  inline MaybeObject Get(IsolateRoot isolate, int index) const;
+  inline MaybeObject Get(PtrComprCageBase cage_base, int index) const;
 
   // Set the element at index to obj. The underlying array must be large enough.
   // If you need to grow the WeakArrayList, use the static AddToEnd() method
   // instead.
   inline void Set(int index, MaybeObject value,
                   WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline void Set(int index, Smi value);
 
   static constexpr int SizeForCapacity(int capacity) {
     return SizeFor(capacity);
@@ -377,9 +397,6 @@ class WeakArrayList
                            int src_index, int len, WriteBarrierMode mode);
 
   V8_EXPORT_PRIVATE bool IsFull();
-
-  // Get and set the capacity using acquire loads and release stores.
-  DECL_SYNCHRONIZED_INT_ACCESSORS(capacity)
 
   int AllocatedSize();
 
@@ -444,6 +461,10 @@ class ArrayList : public TorqueGeneratedArrayList<ArrayList, FixedArray> {
                                                  Handle<ArrayList> array,
                                                  Handle<Object> obj1,
                                                  Handle<Object> obj2);
+  V8_EXPORT_PRIVATE static Handle<ArrayList> Add(Isolate* isolate,
+                                                 Handle<ArrayList> array,
+                                                 Handle<Object> obj1, Smi obj2,
+                                                 Smi obj3, Smi obj4);
   static Handle<ArrayList> New(Isolate* isolate, int size);
 
   // Returns the number of elements in the list, not the allocated size, which
@@ -454,13 +475,15 @@ class ArrayList : public TorqueGeneratedArrayList<ArrayList, FixedArray> {
   // storage capacity, i.e., length().
   inline void SetLength(int length);
   inline Object Get(int index) const;
-  inline Object Get(IsolateRoot isolate, int index) const;
+  inline Object Get(PtrComprCageBase cage_base, int index) const;
   inline ObjectSlot Slot(int index);
 
   // Set the element at index to obj. The underlying array must be large enough.
   // If you need to grow the ArrayList, use the static Add() methods instead.
   inline void Set(int index, Object obj,
                   WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
+  inline void Set(int index, Smi obj);
 
   // Set the element at index to undefined. This does not change the Length().
   inline void Clear(int index, Object undefined);
@@ -471,12 +494,13 @@ class ArrayList : public TorqueGeneratedArrayList<ArrayList, FixedArray> {
 
   static const int kHeaderFields = 1;
 
- private:
-  static Handle<ArrayList> EnsureSpace(Isolate* isolate,
-                                       Handle<ArrayList> array, int length);
   static const int kLengthIndex = 0;
   static const int kFirstIndex = 1;
   STATIC_ASSERT(kHeaderFields == kFirstIndex);
+
+ private:
+  static Handle<ArrayList> EnsureSpace(Isolate* isolate,
+                                       Handle<ArrayList> array, int length);
   TQ_OBJECT_CONSTRUCTORS(ArrayList)
 };
 
@@ -498,8 +522,8 @@ class ByteArray : public TorqueGeneratedByteArray<ByteArray, FixedArrayBase> {
   inline void set(int index, byte value);
 
   // Copy in / copy out whole byte slices.
-  inline void copy_out(int index, byte* buffer, int length);
-  inline void copy_in(int index, const byte* buffer, int length);
+  inline void copy_out(int index, byte* buffer, int slice_length);
+  inline void copy_in(int index, const byte* buffer, int slice_length);
 
   // Treat contents as an int array.
   inline int get_int(int index) const;
@@ -510,6 +534,9 @@ class ByteArray : public TorqueGeneratedByteArray<ByteArray, FixedArrayBase> {
 
   inline uint32_t get_uint32_relaxed(int index) const;
   inline void set_uint32_relaxed(int index, uint32_t value);
+
+  inline uint16_t get_uint16(int index) const;
+  inline void set_uint16(int index, uint16_t value);
 
   // Clear uninitialized padding space. This ensures that the snapshot content
   // is deterministic.
@@ -600,7 +627,7 @@ class TemplateList
   static Handle<TemplateList> New(Isolate* isolate, int size);
   inline int length() const;
   inline Object get(int index) const;
-  inline Object get(IsolateRoot isolate, int index) const;
+  inline Object get(PtrComprCageBase cage_base, int index) const;
   inline void set(int index, Object value);
   static Handle<TemplateList> Add(Isolate* isolate, Handle<TemplateList> list,
                                   Handle<Object> value);

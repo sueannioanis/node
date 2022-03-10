@@ -1,9 +1,9 @@
 'use strict'
 
-const { test } = require('tap')
+const t = require('tap')
 const splitPackageNames = require('../../../lib/utils/split-package-names.js')
 
-test('splitPackageNames', t => {
+t.test('splitPackageNames', t => {
   const assertions = [
     ['semver', 'semver'],
     ['read-pkg/semver', 'read-pkg/node_modules/semver'],
@@ -11,7 +11,8 @@ test('splitPackageNames', t => {
     ['@npmcli/one/semver', '@npmcli/one/node_modules/semver'],
   ]
 
-  for (const [input, expected] of assertions)
+  for (const [input, expected] of assertions) {
     t.equal(splitPackageNames(input), expected, `split ${input} correctly`)
+  }
   t.end()
 })

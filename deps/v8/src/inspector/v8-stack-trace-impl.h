@@ -9,10 +9,15 @@
 #include <vector>
 
 #include "include/v8-inspector.h"
-#include "include/v8.h"
+#include "include/v8-local-handle.h"
 #include "src/base/macros.h"
 #include "src/inspector/protocol/Runtime.h"
 #include "src/inspector/string-16.h"
+
+namespace v8 {
+class StackFrame;
+class StackTrace;
+}  // namespace v8
 
 namespace v8_inspector {
 
@@ -22,12 +27,12 @@ struct V8StackTraceId;
 
 class StackFrame {
  public:
-  explicit StackFrame(v8::Isolate* isolate, v8::Local<v8::StackFrame> frame);
+  StackFrame(String16&& functionName, int scriptId, String16&& sourceURL,
+             int lineNumber, int columnNumber, bool hasSourceURLComment);
   ~StackFrame() = default;
 
   const String16& functionName() const;
   int scriptId() const;
-  const String16& scriptIdAsString() const;
   const String16& sourceURL() const;
   int lineNumber() const;    // 0-based.
   int columnNumber() const;  // 0-based.
@@ -38,7 +43,6 @@ class StackFrame {
  private:
   String16 m_functionName;
   int m_scriptId;
-  String16 m_scriptIdAsString;
   String16 m_sourceURL;
   int m_lineNumber;    // 0-based.
   int m_columnNumber;  // 0-based.
@@ -51,11 +55,9 @@ class V8StackTraceImpl : public V8StackTrace {
                                                         bool capture);
   static int maxCallStackSizeToCapture;
   static std::unique_ptr<V8StackTraceImpl> create(V8Debugger*,
-                                                  int contextGroupId,
                                                   v8::Local<v8::StackTrace>,
                                                   int maxStackSize);
   static std::unique_ptr<V8StackTraceImpl> capture(V8Debugger*,
-                                                   int contextGroupId,
                                                    int maxStackSize);
 
   ~V8StackTraceImpl() override;
@@ -75,11 +77,8 @@ class V8StackTraceImpl : public V8StackTrace {
   StringView topSourceURL() const override;
   int topLineNumber() const override;    // 1-based.
   int topColumnNumber() const override;  // 1-based.
-  StringView topScriptId() const override;
-  int topScriptIdAsInteger() const override;
+  int topScriptId() const override;
   StringView topFunctionName() const override;
-  std::unique_ptr<protocol::Runtime::API::StackTrace> buildInspectorObject()
-      const override;
   std::unique_ptr<protocol::Runtime::API::StackTrace> buildInspectorObject(
       int maxAsyncDepth) const override;
   std::unique_ptr<StringBuffer> toString() const override;
@@ -117,9 +116,9 @@ class AsyncStackTrace {
   AsyncStackTrace(const AsyncStackTrace&) = delete;
   AsyncStackTrace& operator=(const AsyncStackTrace&) = delete;
   static std::shared_ptr<AsyncStackTrace> capture(V8Debugger*,
-                                                  int contextGroupId,
                                                   const String16& description,
-                                                  int maxStackSize);
+                                                  int maxStackSize,
+                                                  bool skipTopFrame = false);
   static uintptr_t store(V8Debugger* debugger,
                          std::shared_ptr<AsyncStackTrace> stack);
 
@@ -136,7 +135,6 @@ class AsyncStackTrace {
   void setSuspendedTaskId(void* task);
   void* suspendedTaskId() const;
 
-  int contextGroupId() const;
   const String16& description() const;
   std::weak_ptr<AsyncStackTrace> parent() const;
   bool isEmpty() const;
@@ -147,12 +145,11 @@ class AsyncStackTrace {
   }
 
  private:
-  AsyncStackTrace(int contextGroupId, const String16& description,
+  AsyncStackTrace(const String16& description,
                   std::vector<std::shared_ptr<StackFrame>> frames,
                   std::shared_ptr<AsyncStackTrace> asyncParent,
                   const V8StackTraceId& externalParent);
 
-  int m_contextGroupId;
   uintptr_t m_id;
   void* m_suspendedTaskId;
   String16 m_description;

@@ -21,12 +21,13 @@
 
 #include "tcp_wrap.h"
 
+#include "connect_wrap.h"
 #include "connection_wrap.h"
 #include "env-inl.h"
 #include "handle_wrap.h"
 #include "node_buffer.h"
+#include "node_external_reference.h"
 #include "node_internals.h"
-#include "connect_wrap.h"
 #include "stream_base-inl.h"
 #include "stream_wrap.h"
 #include "util-inl.h"
@@ -120,6 +121,23 @@ void TCPWrap::Initialize(Local<Object> target,
               constants).Check();
 }
 
+void TCPWrap::RegisterExternalReferences(ExternalReferenceRegistry* registry) {
+  registry->Register(New);
+  registry->Register(Open);
+  registry->Register(Bind);
+  registry->Register(Listen);
+  registry->Register(Connect);
+  registry->Register(Bind6);
+  registry->Register(Connect6);
+
+  registry->Register(GetSockOrPeerName<TCPWrap, uv_tcp_getsockname>);
+  registry->Register(GetSockOrPeerName<TCPWrap, uv_tcp_getpeername>);
+  registry->Register(SetNoDelay);
+  registry->Register(SetKeepAlive);
+#ifdef _WIN32
+  registry->Register(SetSimultaneousAccepts);
+#endif
+}
 
 void TCPWrap::New(const FunctionCallbackInfo<Value>& args) {
   // This constructor should not be exposed to public javascript.
@@ -342,16 +360,20 @@ Local<Object> AddressToJS(Environment* env,
     a6 = reinterpret_cast<const sockaddr_in6*>(addr);
     uv_inet_ntop(AF_INET6, &a6->sin6_addr, ip, sizeof ip);
     // Add an interface identifier to a link local address.
-    if (IN6_IS_ADDR_LINKLOCAL(&a6->sin6_addr)) {
-        const size_t addrlen = strlen(ip);
-        CHECK_LT(addrlen, sizeof(ip));
-        ip[addrlen] = '%';
-        size_t scopeidlen = sizeof(ip) - addrlen - 1;
-        CHECK_GE(scopeidlen, UV_IF_NAMESIZE);
-        const int r = uv_if_indextoiid(a6->sin6_scope_id,
-                                       ip + addrlen + 1,
-                                       &scopeidlen);
-        CHECK_EQ(r, 0);
+    if (IN6_IS_ADDR_LINKLOCAL(&a6->sin6_addr) && a6->sin6_scope_id > 0) {
+      const size_t addrlen = strlen(ip);
+      CHECK_LT(addrlen, sizeof(ip));
+      ip[addrlen] = '%';
+      size_t scopeidlen = sizeof(ip) - addrlen - 1;
+      CHECK_GE(scopeidlen, UV_IF_NAMESIZE);
+      const int r = uv_if_indextoiid(a6->sin6_scope_id,
+                                     ip + addrlen + 1,
+                                     &scopeidlen);
+      if (r) {
+        env->ThrowUVException(r, "uv_if_indextoiid");
+        // TODO(addaleax): Do proper MaybeLocal handling here
+        return scope.Escape(info);
+      }
     }
     port = ntohs(a6->sin6_port);
     info->Set(env->context(),
@@ -393,3 +415,5 @@ Local<Object> AddressToJS(Environment* env,
 }  // namespace node
 
 NODE_MODULE_CONTEXT_AWARE_INTERNAL(tcp_wrap, node::TCPWrap::Initialize)
+NODE_MODULE_EXTERNAL_REFERENCE(tcp_wrap,
+                               node::TCPWrap::RegisterExternalReferences)

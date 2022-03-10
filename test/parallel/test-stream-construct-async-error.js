@@ -11,28 +11,7 @@ const assert = require('assert');
 
 {
   class Foo extends Duplex {
-    async _construct(cb) {
-      // eslint-disable-next-line no-restricted-syntax
-      await setTimeout(common.platformTimeout(1));
-      cb();
-      throw new Error('boom');
-    }
-  }
-
-  const foo = new Foo();
-  foo.on('error', common.expectsError({
-    message: 'boom'
-  }));
-  foo.on('close', common.mustCall(() => {
-    assert(foo._writableState.constructed);
-    assert(foo._readableState.constructed);
-  }));
-}
-
-{
-  class Foo extends Duplex {
     async _destroy(err, cb) {
-      // eslint-disable-next-line no-restricted-syntax
       await setTimeout(common.platformTimeout(1));
       throw new Error('boom');
     }
@@ -51,7 +30,6 @@ const assert = require('assert');
 {
   class Foo extends Duplex {
     async _destroy(err, cb) {
-      // eslint-disable-next-line no-restricted-syntax
       await setTimeout(common.platformTimeout(1));
     }
   }
@@ -66,13 +44,12 @@ const assert = require('assert');
 {
   class Foo extends Duplex {
     async _construct() {
-      // eslint-disable-next-line no-restricted-syntax
       await setTimeout(common.platformTimeout(1));
     }
 
     _write = common.mustCall((chunk, encoding, cb) => {
       cb();
-    })
+    });
 
     _read() {}
   }
@@ -84,30 +61,29 @@ const assert = require('assert');
 {
   class Foo extends Duplex {
     async _construct(callback) {
-      // eslint-disable-next-line no-restricted-syntax
       await setTimeout(common.platformTimeout(1));
       callback();
     }
 
     _write = common.mustCall((chunk, encoding, cb) => {
       cb();
-    })
+    });
 
     _read() {}
   }
 
   const foo = new Foo();
   foo.write('test', common.mustCall());
+  foo.on('error', common.mustNotCall());
 }
 
 {
   class Foo extends Writable {
     _write = common.mustCall((chunk, encoding, cb) => {
       cb();
-    })
+    });
 
     async _final() {
-      // eslint-disable-next-line no-restricted-syntax
       await setTimeout(common.platformTimeout(1));
     }
   }
@@ -121,10 +97,9 @@ const assert = require('assert');
   class Foo extends Writable {
     _write = common.mustCall((chunk, encoding, cb) => {
       cb();
-    })
+    });
 
     async _final(callback) {
-      // eslint-disable-next-line no-restricted-syntax
       await setTimeout(common.platformTimeout(1));
       callback();
     }
@@ -139,10 +114,9 @@ const assert = require('assert');
   class Foo extends Writable {
     _write = common.mustCall((chunk, encoding, cb) => {
       cb();
-    })
+    });
 
     async _final() {
-      // eslint-disable-next-line no-restricted-syntax
       await setTimeout(common.platformTimeout(1));
       throw new Error('boom');
     }

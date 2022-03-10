@@ -156,12 +156,14 @@ assert.match(util.inspect((new JSStream())._externalStream),
   assert.strictEqual(util.inspect({ a: regexp }, false, 0), '{ a: /regexp/ }');
 }
 
-assert(/Object/.test(
-  util.inspect({ a: { a: { a: { a: {} } } } }, undefined, undefined, true)
-));
-assert(!/Object/.test(
-  util.inspect({ a: { a: { a: { a: {} } } } }, undefined, null, true)
-));
+assert.match(
+  util.inspect({ a: { a: { a: { a: {} } } } }, undefined, undefined, true),
+  /Object/
+);
+assert.doesNotMatch(
+  util.inspect({ a: { a: { a: { a: {} } } } }, undefined, null, true),
+  /Object/
+);
 
 {
   const showHidden = true;
@@ -432,7 +434,7 @@ assert.strictEqual(
 
 // Array with extra properties.
 {
-  const arr = [1, 2, 3, , ];
+  const arr = [1, 2, 3, , ]; // eslint-disable-line no-sparse-arrays
   arr.foo = 'bar';
   assert.strictEqual(util.inspect(arr),
                      "[ 1, 2, 3, <1 empty item>, foo: 'bar' ]");
@@ -495,7 +497,7 @@ assert.strictEqual(
                       'true,',
                       "'4294967296': true,",
                       "'4294967295': true,",
-                      "'4294967297': true\n]"
+                      "'4294967297': true\n]",
                      ].join('\n  '));
 }
 
@@ -640,7 +642,7 @@ assert.strictEqual(util.inspect(-5e-324), '-5e-324');
     new Error(),
     new Error('FAIL'),
     new TypeError('FAIL'),
-    new SyntaxError('FAIL')
+    new SyntaxError('FAIL'),
   ].forEach((err) => {
     assert.strictEqual(util.inspect(err), err.stack);
   });
@@ -656,6 +658,22 @@ assert.strictEqual(util.inspect(-5e-324), '-5e-324');
   assert(ex.includes('Error: FAIL'));
   assert(ex.includes('[stack]'));
   assert(ex.includes('[message]'));
+}
+
+{
+  const falsyCause1 = new Error('', { cause: false });
+  delete falsyCause1.stack;
+  const falsyCause2 = new Error(undefined, { cause: null });
+  falsyCause2.stack = '';
+  const undefinedCause = new Error('', { cause: undefined });
+  undefinedCause.stack = '';
+
+  assert.strictEqual(util.inspect(falsyCause1), '[Error] { [cause]: false }');
+  assert.strictEqual(util.inspect(falsyCause2), '[Error] { [cause]: null }');
+  assert.strictEqual(
+    util.inspect(undefinedCause),
+    '[Error] { [cause]: undefined }'
+  );
 }
 
 {
@@ -835,6 +853,48 @@ assert.strictEqual(util.inspect(Object.create(Date.prototype)), 'Date {}');
   );
 }
 
+// Escape unpaired surrogate pairs.
+{
+  const edgeChar = String.fromCharCode(0xd799);
+
+  for (let charCode = 0xD800; charCode < 0xDFFF; charCode++) {
+    const surrogate = String.fromCharCode(charCode);
+
+    assert.strictEqual(
+      util.inspect(surrogate),
+      `'\\u${charCode.toString(16)}'`
+    );
+    assert.strictEqual(
+      util.inspect(`${'a'.repeat(200)}${surrogate}`),
+      `'${'a'.repeat(200)}\\u${charCode.toString(16)}'`
+    );
+    assert.strictEqual(
+      util.inspect(`${surrogate}${'a'.repeat(200)}`),
+      `'\\u${charCode.toString(16)}${'a'.repeat(200)}'`
+    );
+    if (charCode < 0xdc00) {
+      const highSurrogate = surrogate;
+      const lowSurrogate = String.fromCharCode(charCode + 1024);
+      assert(
+        !util.inspect(
+          `${edgeChar}${highSurrogate}${lowSurrogate}${edgeChar}`
+        ).includes('\\u')
+      );
+      assert.strictEqual(
+        (util.inspect(
+          `${highSurrogate}${highSurrogate}${lowSurrogate}`
+        ).match(/\\u/g) ?? []).length,
+        1
+      );
+    } else {
+      assert.strictEqual(
+        util.inspect(`${edgeChar}${surrogate}${edgeChar}`),
+        `'${edgeChar}\\u${charCode.toString(16)}${edgeChar}'`
+      );
+    }
+  }
+}
+
 // Test util.inspect.styles and util.inspect.colors.
 {
   function testColorStyle(style, input, implicit) {
@@ -930,7 +990,7 @@ util.inspect({ hasOwnProperty: null });
 
   assert.strictEqual(util.inspect(subject), "{ foo: 'bar' }");
 
-  subject[util.inspect.custom] = common.mustCall((depth, opts) => {
+  subject[util.inspect.custom] = common.mustCall((depth, opts, inspect) => {
     const clone = { ...opts };
     // This might change at some point but for now we keep the stylize function.
     // The function should either be documented or an alternative should be
@@ -940,12 +1000,13 @@ util.inspect({ hasOwnProperty: null });
     assert.strictEqual(opts.budget, undefined);
     assert.strictEqual(opts.indentationLvl, undefined);
     assert.strictEqual(opts.showHidden, false);
+    assert.strictEqual(inspect, util.inspect);
     assert.deepStrictEqual(
-      new Set(Object.keys(util.inspect.defaultOptions).concat(['stylize'])),
+      new Set(Object.keys(inspect.defaultOptions).concat(['stylize'])),
       new Set(Object.keys(opts))
     );
     opts.showHidden = true;
-    return { [util.inspect.custom]: common.mustCall((depth, opts2) => {
+    return { [inspect.custom]: common.mustCall((depth, opts2) => {
       assert.deepStrictEqual(clone, opts2);
     }) };
   });
@@ -1467,13 +1528,13 @@ if (typeof Symbol !== 'undefined') {
 
   // Set single option through property assignment.
   util.inspect.defaultOptions.maxArrayLength = null;
-  assert(!/1 more item/.test(util.inspect(arr)));
+  assert.doesNotMatch(util.inspect(arr), /1 more item/);
   util.inspect.defaultOptions.maxArrayLength = oldOptions.maxArrayLength;
-  assert(/1 more item/.test(util.inspect(arr)));
+  assert.match(util.inspect(arr), /1 more item/);
   util.inspect.defaultOptions.depth = null;
-  assert(!/Object/.test(util.inspect(obj)));
+  assert.doesNotMatch(util.inspect(obj), /Object/);
   util.inspect.defaultOptions.depth = oldOptions.depth;
-  assert(/Object/.test(util.inspect(obj)));
+  assert.match(util.inspect(obj), /Object/);
   assert.strictEqual(
     JSON.stringify(util.inspect.defaultOptions),
     JSON.stringify(oldOptions)
@@ -1481,11 +1542,11 @@ if (typeof Symbol !== 'undefined') {
 
   // Set multiple options through object assignment.
   util.inspect.defaultOptions = { maxArrayLength: null, depth: 2 };
-  assert(!/1 more item/.test(util.inspect(arr)));
-  assert(/Object/.test(util.inspect(obj)));
+  assert.doesNotMatch(util.inspect(arr), /1 more item/);
+  assert.match(util.inspect(obj), /Object/);
   util.inspect.defaultOptions = oldOptions;
-  assert(/1 more item/.test(util.inspect(arr)));
-  assert(/Object/.test(util.inspect(obj)));
+  assert.match(util.inspect(arr), /1 more item/);
+  assert.match(util.inspect(obj), /Object/);
   assert.strictEqual(
     JSON.stringify(util.inspect.defaultOptions),
     JSON.stringify(oldOptions)
@@ -1629,7 +1690,7 @@ util.inspect(process);
     "    'za' => 1,",
     "    'zb' => 'test'",
     '  }',
-    '}'
+    '}',
   ].join('\n');
   assert.strictEqual(out, expect);
 
@@ -1637,7 +1698,7 @@ util.inspect(process);
   expect = [
     "'Lorem ipsum dolor\\n' +",
     "  'sit amet,\\tconsectetur adipiscing elit, sed do eiusmod tempor " +
-      "incididunt ut labore et dolore magna aliqua.'"
+      "incididunt ut labore et dolore magna aliqua.'",
   ].join('\n');
   assert.strictEqual(out, expect);
 
@@ -1651,7 +1712,7 @@ util.inspect(process);
     '12 45 78 01 34 67 90 23 56 89 123456789012345678901234567890',
     { compact: false, breakLength: 3 });
   expect = [
-    "'12 45 78 01 34 67 90 23 56 89 123456789012345678901234567890'"
+    "'12 45 78 01 34 67 90 23 56 89 123456789012345678901234567890'",
   ].join('\n');
   assert.strictEqual(out, expect);
 
@@ -1662,7 +1723,7 @@ util.inspect(process);
     '{',
     '  a: [Function (anonymous)],',
     '  b: [Number: 3]',
-    '}'
+    '}',
   ].join('\n');
   assert.strictEqual(out, expect);
 
@@ -1674,7 +1735,7 @@ util.inspect(process);
     "    [name]: ''",
     '  },',
     '  b: [Number: 3]',
-    '}'
+    '}',
   ].join('\n');
   assert.strictEqual(out, expect);
 
@@ -1752,7 +1813,7 @@ util.inspect(process);
     '    [Circular *1],',
     "    [Symbol(Symbol.toStringTag)]: 'Map Iterator'",
     '  }',
-    '}'
+    '}',
   ].join('\n');
 
   assert.strict.equal(out, expected);
@@ -1791,7 +1852,7 @@ util.inspect(process);
     '    [Circular *1],',
     "    [Symbol(Symbol.toStringTag)]: 'Map Iterator'",
     '  }',
-    '}'
+    '}',
   ].join('\n');
 
   assert.strict.equal(out, expected);
@@ -1832,7 +1893,7 @@ util.inspect(process);
     '        foo: true } ],',
     '    [Circular *1],',
     '    [Symbol(Symbol.toStringTag)]:',
-    "     'Map Iterator' } }"
+    "     'Map Iterator' } }",
   ].join('\n');
 
   assert.strict.equal(out, expected);
@@ -1930,7 +1991,7 @@ assert.strictEqual(util.inspect('"\'${a}'), "'\"\\'${a}'");
     get name() {
       return 'BazError';
     }
-  }, undefined]
+  }, undefined],
 ].forEach(([Class, message], i) => {
   console.log('Test %i', i);
   const foo = new Class(message);
@@ -2000,7 +2061,7 @@ assert.strictEqual(util.inspect('"\'${a}'), "'\"\\'${a}'");
   // Foobar !!!
   [class X   extends /****/ Error
   // More comments
-  {}, '[class X extends Error]']
+  {}, '[class X extends Error]'],
   /* eslint-enable spaced-comment, no-multi-spaces, brace-style */
 ].forEach(([clazz, string]) => {
   const inspected = util.inspect(clazz);
@@ -2081,6 +2142,7 @@ assert.strictEqual(util.inspect('"\'${a}'), "'\"\\'${a}'");
   [function() {}, '[Function (anonymous)]'],
   [() => {}, '[Function (anonymous)]'],
   [[1, 2], '[ 1, 2 ]'],
+  // eslint-disable-next-line no-sparse-arrays
   [[, , 5, , , , ], '[ <2 empty items>, 5, <3 empty items> ]'],
   [{ a: 5 }, '{ a: 5 }'],
   [new Set([1, 2]), 'Set(2) { 1, 2 }'],
@@ -2092,7 +2154,7 @@ assert.strictEqual(util.inspect('"\'${a}'), "'\"\\'${a}'");
   [new Promise((resolve) => setTimeout(resolve, 10)), 'Promise { <pending> }'],
   [new WeakSet(), 'WeakSet { <items unknown> }'],
   [new WeakMap(), 'WeakMap { <items unknown> }'],
-  [/foobar/g, '/foobar/g']
+  [/foobar/g, '/foobar/g'],
 ].forEach(([value, expected]) => {
   Object.defineProperty(value, 'valueOf', {
     get() {
@@ -2141,7 +2203,7 @@ assert.strictEqual(util.inspect('"\'${a}'), "'\"\\'${a}'");
      '{\n  [Uint8Contents]: <00 00>,\n  byteLength: undefined\n}'],
   [/foobar/, '[RegExp: null prototype] /foobar/'],
   [new Date('Sun, 14 Feb 2010 11:48:40 GMT'),
-   '[Date: null prototype] 2010-02-14T11:48:40.000Z']
+   '[Date: null prototype] 2010-02-14T11:48:40.000Z'],
 ].forEach(([value, expected]) => {
   assert.strictEqual(
     util.inspect(Object.setPrototypeOf(value, null)),
@@ -2163,7 +2225,7 @@ assert.strictEqual(util.inspect('"\'${a}'), "'\"\\'${a}'");
    [10],
    '[\n  0n, 0n, 0n, 0n, 0n,\n  0n, 0n, 0n, 0n, 0n\n]'],
   [Date, ['Sun, 14 Feb 2010 11:48:40 GMT'], '2010-02-14T11:48:40.000Z'],
-  [Date, ['invalid_date'], 'Invalid Date']
+  [Date, ['invalid_date'], 'Invalid Date'],
 ].forEach(([base, input, rawExpected]) => {
   class Foo extends base {}
   const value = new Foo(...input);
@@ -2183,12 +2245,12 @@ assert.strictEqual(util.inspect('"\'${a}'), "'\"\\'${a}'");
   value.foo = 'bar';
   let res = util.inspect(value);
   assert.notStrictEqual(res, expectedWithoutProto);
-  assert(/foo: 'bar'/.test(res), res);
+  assert.match(res, /foo: 'bar'/);
   delete value.foo;
   value[Symbol('foo')] = 'yeah';
   res = util.inspect(value);
   assert.notStrictEqual(res, expectedWithoutProto);
-  assert(/\[Symbol\(foo\)]: 'yeah'/.test(res), res);
+  assert.match(res, /\[Symbol\(foo\)]: 'yeah'/);
 });
 
 assert.strictEqual(inspect(1n), '1n');
@@ -2253,7 +2315,7 @@ assert.strictEqual(
     'blue',
     'magenta',
     'cyan',
-    'white'
+    'white',
   ].forEach((color, i) => {
     assert.deepStrictEqual(inspect.colors[color], [30 + i, 39]);
     assert.deepStrictEqual(inspect.colors[`${color}Bright`], [90 + i, 39]);
@@ -2431,7 +2493,7 @@ assert.strictEqual(
     b: [
       1,
       2,
-      [ 1, 2, { a: 1, b: 2, c: 3 } ]
+      [ 1, 2, { a: 1, b: 2, c: 3 } ],
     ],
     c: ['foo', 4, 444444],
     d: Array.from({ length: 101 }).map((e, i) => {
@@ -2523,7 +2585,7 @@ assert.strictEqual(
     "    'This text is too long for grouping!',",
     "    'This text is too long for grouping!'",
     '  ]',
-    '}'
+    '}',
   ].join('\n');
 
   assert.strictEqual(out, expected);
@@ -2531,7 +2593,7 @@ assert.strictEqual(
   obj = [
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 123456789
+    1, 1, 1, 1, 1, 1, 123456789,
   ];
 
   out = util.inspect(obj, { compact: 3 });
@@ -2545,7 +2607,7 @@ assert.strictEqual(
     '  1, 1,         1, 1,',
     '  1, 1,         1, 1,',
     '  1, 1, 123456789',
-    ']'
+    ']',
   ].join('\n');
 
   assert.strictEqual(out, expected);
@@ -2553,7 +2615,7 @@ assert.strictEqual(
   // Unicode support. あ has a length of one and a width of two.
   obj = [
     '123', '123', '123', '123', 'あああ',
-    '123', '123', '123', '123', 'あああ'
+    '123', '123', '123', '123', 'あああ',
   ];
 
   out = util.inspect(obj, { compact: 3 });
@@ -2565,6 +2627,24 @@ assert.strictEqual(
     "  'あああ', '123',",
     "  '123',    '123',",
     "  '123',    'あああ'",
+    ']',
+  ].join('\n');
+
+  assert.strictEqual(out, expected);
+
+  // Array grouping should prevent lining up outer elements on a single line.
+  obj = [[[1, 2, 3, 4, 5, 6, 7, 8, 9]]];
+
+  out = util.inspect(obj, { compact: 3 });
+
+  expected = [
+    '[',
+    '  [',
+    '    [',
+    '      1, 2, 3, 4, 5,',
+    '      6, 7, 8, 9',
+    '    ]',
+    '  ]',
     ']',
   ].join('\n');
 
@@ -2610,7 +2690,6 @@ assert.strictEqual(
 
   expected = [
     '[',
-    /* eslint-disable max-len */
     '   \u001b[33m0\u001b[39m,  \u001b[33m1\u001b[39m,  \u001b[33m2\u001b[39m,  \u001b[33m3\u001b[39m,',
     '   \u001b[33m4\u001b[39m,  \u001b[33m5\u001b[39m,  \u001b[33m6\u001b[39m,  \u001b[33m7\u001b[39m,',
     '   \u001b[33m8\u001b[39m,  \u001b[33m9\u001b[39m, \u001b[33m10\u001b[39m, \u001b[33m11\u001b[39m,',
@@ -2626,8 +2705,7 @@ assert.strictEqual(
     '  \u001b[33m48\u001b[39m, \u001b[33m49\u001b[39m, \u001b[33m50\u001b[39m, \u001b[33m51\u001b[39m,',
     '  \u001b[33m52\u001b[39m, \u001b[33m53\u001b[39m, \u001b[33m54\u001b[39m, \u001b[33m55\u001b[39m,',
     '  \u001b[33m56\u001b[39m, \u001b[33m57\u001b[39m, \u001b[33m58\u001b[39m, \u001b[33m59\u001b[39m',
-    /* eslint-enable max-len */
-    ']'
+    ']',
   ].join('\n');
 
   assert.strictEqual(out, expected);
@@ -2675,7 +2753,7 @@ assert.strictEqual(
     'string_decoder', 'tls', 'trace_events',
     'tty', 'url', 'v8',
     'vm', 'worker_threads', 'zlib',
-    '_', '_error', 'util'
+    '_', '_error', 'util',
   ];
 
   out = util.inspect(
@@ -2721,7 +2799,7 @@ assert.strictEqual(
     "  'tty',             'url',                'v8',",
     "  'vm',              'worker_threads',     'zlib',",
     "  '_',               '_error',             'util'",
-    ']'
+    ']',
   ].join('\n');
 
   assert.strictEqual(out, expected);
@@ -2741,10 +2819,10 @@ assert.strictEqual(
     '    at Module.require [as weird/name] (node:internal/aaaaa/loader:735:19)',
     '    at require (node:internal/modules/cjs/helpers:14:16)',
     '    at /test/test-util-inspect.js:2239:9',
-    '    at getActual (node:assert:592:5)'
+    '    at getActual (node:assert:592:5)',
   ];
   const isNodeCoreFile = [
-    false, false, true, true, false, true, false, true, false, true
+    false, false, true, true, false, true, false, true, false, true,
   ];
   const err = new TypeError('Wonderful message!');
   err.stack = stack.join('\n');
@@ -2855,8 +2933,8 @@ assert.strictEqual(
     '<ref *1> Foo [Map] {\n' +
     '    [constructor]: [class Bar extends Foo] {\n' +
     '      [length]: 0,\n' +
-    '      [prototype]: [Circular *1],\n' +
     "      [name]: 'Bar',\n" +
+    '      [prototype]: [Circular *1],\n' +
     '      [Symbol(Symbol.species)]: [Getter: <Inspection threw ' +
       "(Symbol.prototype.toString requires that 'this' be a Symbol)>]\n" +
     '    },\n' +
@@ -3093,5 +3171,67 @@ assert.strictEqual(
     "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf',\n" +
     "  'fhqwhgadshgnsdhjsdbkhsdabkfabkveybvf'\n" +
     ']'
+  );
+}
+
+{
+  assert.strictEqual(
+    util.inspect({ ['__proto__']: { a: 1 } }),
+    "{ ['__proto__']: { a: 1 } }"
+  );
+}
+
+{
+  const { numericSeparator } = util.inspect.defaultOptions;
+  util.inspect.defaultOptions.numericSeparator = true;
+
+  assert.strictEqual(
+    // eslint-disable-next-line no-loss-of-precision
+    util.inspect(1234567891234567891234),
+    '1.234567891234568e+21'
+  );
+  assert.strictEqual(
+    util.inspect(123456789.12345678),
+    '123_456_789.123_456_78'
+  );
+
+  assert.strictEqual(util.inspect(10_000_000), '10_000_000');
+  assert.strictEqual(util.inspect(1_000_000), '1_000_000');
+  assert.strictEqual(util.inspect(100_000), '100_000');
+  assert.strictEqual(util.inspect(99_999.9), '99_999.9');
+  assert.strictEqual(util.inspect(9_999), '9_999');
+  assert.strictEqual(util.inspect(999), '999');
+  assert.strictEqual(util.inspect(NaN), 'NaN');
+  assert.strictEqual(util.inspect(Infinity), 'Infinity');
+  assert.strictEqual(util.inspect(-Infinity), '-Infinity');
+
+  assert.strictEqual(
+    util.inspect(new Float64Array([100_000_000])),
+    'Float64Array(1) [ 100_000_000 ]'
+  );
+  assert.strictEqual(
+    util.inspect(new BigInt64Array([9_100_000_100n])),
+    'BigInt64Array(1) [ 9_100_000_100n ]'
+  );
+
+  assert.strictEqual(
+    util.inspect(123456789),
+    '123_456_789'
+  );
+  assert.strictEqual(
+    util.inspect(123456789n),
+    '123_456_789n'
+  );
+
+  util.inspect.defaultOptions.numericSeparator = numericSeparator;
+
+  assert.strictEqual(
+    util.inspect(123456789.12345678, { numericSeparator: true }),
+    '123_456_789.123_456_78'
+  );
+
+  assert.strictEqual(
+    util.inspect(-123456789.12345678, { numericSeparator: true }),
+    '-123_456_789.123_456_78'
   );
 }

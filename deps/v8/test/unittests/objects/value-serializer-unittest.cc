@@ -7,16 +7,29 @@
 #include <algorithm>
 #include <string>
 
-#include "include/v8.h"
+#include "include/v8-context.h"
+#include "include/v8-date.h"
+#include "include/v8-function.h"
+#include "include/v8-json.h"
+#include "include/v8-local-handle.h"
+#include "include/v8-primitive-object.h"
+#include "include/v8-template.h"
+#include "include/v8-value-serializer.h"
+#include "include/v8-wasm.h"
 #include "src/api/api-inl.h"
 #include "src/base/build_config.h"
 #include "src/objects/backing-store.h"
+#include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/objects-inl.h"
-#include "src/wasm/wasm-objects.h"
-#include "src/wasm/wasm-result.h"
 #include "test/unittests/test-utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/wasm/wasm-engine.h"
+#include "src/wasm/wasm-objects.h"
+#include "src/wasm/wasm-result.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
 namespace {
@@ -256,12 +269,9 @@ class ValueSerializerTest : public TestWithIsolate {
   }
 
   Local<Object> NewDummyUint8Array() {
-    static uint8_t data[] = {4, 5, 6};
-    std::unique_ptr<v8::BackingStore> backing_store =
-        ArrayBuffer::NewBackingStore(
-            data, sizeof(data), [](void*, size_t, void*) {}, nullptr);
-    Local<ArrayBuffer> ab =
-        ArrayBuffer::New(isolate(), std::move(backing_store));
+    const uint8_t data[] = {4, 5, 6};
+    Local<ArrayBuffer> ab = ArrayBuffer::New(isolate(), sizeof(data));
+    memcpy(ab->GetBackingStore()->Data(), data, sizeof(data));
     return Uint8Array::New(ab, 0, sizeof(data));
   }
 
@@ -1511,6 +1521,17 @@ TEST_F(ValueSerializerTest, DecodeLinearRegExp) {
   i::FLAG_enable_experimental_regexp_engine = flag_was_enabled;
 }
 
+TEST_F(ValueSerializerTest, DecodeHasIndicesRegExp) {
+  // The last byte encodes the regexp flags.
+  std::vector<uint8_t> regexp_encoding = {0xFF, 0x09, 0x3F, 0x00, 0x52, 0x03,
+                                          0x66, 0x6F, 0x6F, 0xAD, 0x01};
+
+  Local<Value> value = DecodeTest(regexp_encoding);
+  ASSERT_TRUE(value->IsRegExp());
+  ExpectScriptTrue("Object.getPrototypeOf(result) === RegExp.prototype");
+  ExpectScriptTrue("result.toString() === '/foo/dgmsy'");
+}
+
 TEST_F(ValueSerializerTest, RoundTripMap) {
   Local<Value> value = RoundTripTest("var m = new Map(); m.set(42, 'foo'); m;");
   ASSERT_TRUE(value->IsMap());
@@ -1905,7 +1926,7 @@ TEST_F(ValueSerializerTest, DecodeTypedArray) {
 
   // Check that values of various kinds are suitably preserved.
   value = DecodeTest({0xFF, 0x09, 0x3F, 0x00, 0x3F, 0x00, 0x42, 0x03, 0x01,
-                      0x80, 0xFF, 0x56, 0x42, 0x00, 0x03, 0x00});
+                      0x80, 0xFF, 0x56, 0x42, 0x00, 0x03});
   ExpectScriptTrue("result.toString() === '1,128,255'");
 
 #if defined(V8_TARGET_LITTLE_ENDIAN)
@@ -1928,10 +1949,10 @@ TEST_F(ValueSerializerTest, DecodeTypedArray) {
        0x01, 0x3F, 0x01, 0x42, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-       0x00, 0x56, 0x42, 0x00, 0x20, 0x3F, 0x03, 0x53, 0x04, 0x75, 0x38, 0x5F,
-       0x32, 0x3F, 0x03, 0x5E, 0x02, 0x3F, 0x03, 0x53, 0x03, 0x66, 0x33, 0x32,
-       0x3F, 0x03, 0x3F, 0x03, 0x5E, 0x01, 0x56, 0x66, 0x04, 0x14, 0x3F, 0x04,
-       0x53, 0x01, 0x62, 0x3F, 0x04, 0x5E, 0x01, 0x7B, 0x04, 0x00});
+       0x00, 0x56, 0x42, 0x00, 0x20, 0x00, 0x3F, 0x03, 0x53, 0x04, 0x75, 0x38,
+       0x5F, 0x32, 0x3F, 0x03, 0x5E, 0x02, 0x3F, 0x03, 0x53, 0x03, 0x66, 0x33,
+       0x32, 0x3F, 0x03, 0x3F, 0x03, 0x5E, 0x01, 0x56, 0x66, 0x04, 0x14, 0x00,
+       0x3F, 0x04, 0x53, 0x01, 0x62, 0x3F, 0x04, 0x5E, 0x01, 0x7B, 0x04});
   ExpectScriptTrue("result.u8 instanceof Uint8Array");
   ExpectScriptTrue("result.u8 === result.u8_2");
   ExpectScriptTrue("result.f32 instanceof Float32Array");
@@ -1965,12 +1986,17 @@ TEST_F(ValueSerializerTest, RoundTripDataView) {
   EXPECT_EQ(2u, DataView::Cast(*value)->ByteLength());
   EXPECT_EQ(4u, DataView::Cast(*value)->Buffer()->ByteLength());
   ExpectScriptTrue("Object.getPrototypeOf(result) === DataView.prototype");
+  // TODO(v8:11111): Use API functions for testing these, once they're exposed
+  // via the API.
+  i::Handle<i::JSDataView> i_dv = v8::Utils::OpenHandle(DataView::Cast(*value));
+  EXPECT_EQ(false, i_dv->is_length_tracking());
+  EXPECT_EQ(false, i_dv->is_backed_by_rab());
 }
 
 TEST_F(ValueSerializerTest, DecodeDataView) {
   Local<Value> value =
       DecodeTest({0xFF, 0x09, 0x3F, 0x00, 0x3F, 0x00, 0x42, 0x04, 0x00, 0x00,
-                  0x00, 0x00, 0x56, 0x3F, 0x01, 0x02});
+                  0x00, 0x00, 0x56, 0x3F, 0x01, 0x02, 0x00});
   ASSERT_TRUE(value->IsDataView());
   EXPECT_EQ(1u, DataView::Cast(*value)->ByteOffset());
   EXPECT_EQ(2u, DataView::Cast(*value)->ByteLength());
@@ -2024,6 +2050,7 @@ class ValueSerializerTestWithSharedArrayBufferClone
 
   Local<SharedArrayBuffer> NewSharedArrayBuffer(void* data, size_t byte_length,
                                                 bool is_wasm_memory) {
+#if V8_ENABLE_WEBASSEMBLY
     if (is_wasm_memory) {
       // TODO(titzer): there is no way to create Wasm memory backing stores
       // through the API, or to create a shared array buffer whose backing
@@ -2038,17 +2065,13 @@ class ValueSerializerTestWithSharedArrayBufferClone
           i_isolate->factory()->NewJSSharedArrayBuffer(
               std::move(backing_store));
       return Utils::ToLocalShared(buffer);
-    } else {
-      std::unique_ptr<v8::BackingStore> backing_store =
-          SharedArrayBuffer::NewBackingStore(
-              data, byte_length,
-              [](void*, size_t, void*) {
-                // Leak the buffer as it has the
-                // lifetime of the test.
-              },
-              nullptr);
-      return SharedArrayBuffer::New(isolate(), std::move(backing_store));
     }
+#endif  // V8_ENABLE_WEBASSEMBLY
+
+    CHECK(!is_wasm_memory);
+    auto sab = SharedArrayBuffer::New(isolate(), byte_length);
+    memcpy(sab->GetBackingStore()->Data(), data, byte_length);
+    return sab;
   }
 
   static void SetUpTestCase() {
@@ -2154,6 +2177,7 @@ TEST_F(ValueSerializerTestWithSharedArrayBufferClone,
   ExpectScriptTrue("new Uint8Array(result.a).toString() === '0,1,128,255'");
 }
 
+#if V8_ENABLE_WEBASSEMBLY
 TEST_F(ValueSerializerTestWithSharedArrayBufferClone,
        RoundTripWebAssemblyMemory) {
   bool flag_was_enabled = i::FLAG_experimental_wasm_threads;
@@ -2186,6 +2210,7 @@ TEST_F(ValueSerializerTestWithSharedArrayBufferClone,
 
   i::FLAG_experimental_wasm_threads = flag_was_enabled;
 }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 TEST_F(ValueSerializerTest, UnsupportedHostObject) {
   InvalidEncodeTest("new ExampleHostObject()");
@@ -2461,6 +2486,7 @@ TEST_F(ValueSerializerTestWithHostArrayBufferView, RoundTripUint8ArrayInput) {
   ExpectScriptTrue("result.a === result.b");
 }
 
+#if V8_ENABLE_WEBASSEMBLY
 // It's expected that WebAssembly has more exhaustive tests elsewhere; this
 // mostly checks that the logic to embed it in structured clone serialization
 // works correctly.
@@ -2572,9 +2598,9 @@ class ValueSerializerTestWithWasm : public ValueSerializerTest {
     i::wasm::ErrorThrower thrower(i_isolate(), "MakeWasm");
     auto enabled_features = i::wasm::WasmFeatures::FromIsolate(i_isolate());
     i::MaybeHandle<i::JSObject> compiled =
-        i_isolate()->wasm_engine()->SyncCompile(
+        i::wasm::GetWasmEngine()->SyncCompile(
             i_isolate(), enabled_features, &thrower,
-            i::wasm::ModuleWireBytes(i::ArrayVector(kIncrementerWasm)));
+            i::wasm::ModuleWireBytes(base::ArrayVector(kIncrementerWasm)));
     CHECK(!thrower.error());
     return Local<WasmModuleObject>::Cast(
         Utils::ToLocal(compiled.ToHandleChecked()));
@@ -2712,6 +2738,7 @@ TEST_F(ValueSerializerTestWithWasm, ComplexObjectWithManyTransfer) {
   VerifyComplexObject(value);
   ExpectScriptTrue("result.mod1 != result.mod2");
 }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 class ValueSerializerTestWithLimitedMemory : public ValueSerializerTest {
  protected:

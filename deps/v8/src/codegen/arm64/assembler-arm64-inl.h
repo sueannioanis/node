@@ -19,8 +19,6 @@ namespace internal {
 
 bool CpuFeatures::SupportsOptimizer() { return true; }
 
-bool CpuFeatures::SupportsWasmSimd128() { return true; }
-
 void RelocInfo::apply(intptr_t delta) {
   // On arm64 only internal references and immediate branches need extra work.
   if (RelocInfo::IsInternalReference(rmode_)) {
@@ -194,7 +192,7 @@ inline VRegister CPURegister::Q() const {
 // Default initializer is for int types
 template <typename T>
 struct ImmediateInitializer {
-  static inline RelocInfo::Mode rmode_for(T) { return RelocInfo::NONE; }
+  static inline RelocInfo::Mode rmode_for(T) { return RelocInfo::NO_INFO; }
   static inline int64_t immediate_for(T t) {
     STATIC_ASSERT(sizeof(T) <= 8);
     STATIC_ASSERT(std::is_integral<T>::value || std::is_enum<T>::value);
@@ -204,7 +202,7 @@ struct ImmediateInitializer {
 
 template <>
 struct ImmediateInitializer<Smi> {
-  static inline RelocInfo::Mode rmode_for(Smi t) { return RelocInfo::NONE; }
+  static inline RelocInfo::Mode rmode_for(Smi t) { return RelocInfo::NO_INFO; }
   static inline int64_t immediate_for(Smi t) {
     return static_cast<int64_t>(t.ptr());
   }
@@ -657,28 +655,22 @@ Address RelocInfo::constant_pool_entry_address() {
   return Assembler::target_pointer_address_at(pc_);
 }
 
-HeapObject RelocInfo::target_object() {
+HeapObject RelocInfo::target_object(PtrComprCageBase cage_base) {
   DCHECK(IsCodeTarget(rmode_) || IsEmbeddedObjectMode(rmode_));
   if (IsDataEmbeddedObject(rmode_)) {
     return HeapObject::cast(Object(ReadUnalignedValue<Address>(pc_)));
   } else if (IsCompressedEmbeddedObject(rmode_)) {
-    CHECK(!host_.is_null());
-    return HeapObject::cast(Object(DecompressTaggedAny(
-        host_.address(),
-        Assembler::target_compressed_address_at(pc_, constant_pool_))));
+    Tagged_t compressed =
+        Assembler::target_compressed_address_at(pc_, constant_pool_);
+    DCHECK(!HAS_SMI_TAG(compressed));
+    Object obj(DecompressTaggedPointer(cage_base, compressed));
+    // Embedding of compressed Code objects must not happen when external code
+    // space is enabled, because CodeDataContainers must be used instead.
+    DCHECK_IMPLIES(V8_EXTERNAL_CODE_SPACE_BOOL, !obj.IsCode(cage_base));
+    return HeapObject::cast(obj);
   } else {
     return HeapObject::cast(
         Object(Assembler::target_address_at(pc_, constant_pool_)));
-  }
-}
-
-HeapObject RelocInfo::target_object_no_host(Isolate* isolate) {
-  if (IsCompressedEmbeddedObject(rmode_)) {
-    return HeapObject::cast(Object(DecompressTaggedAny(
-        isolate,
-        Assembler::target_compressed_address_at(pc_, constant_pool_))));
-  } else {
-    return target_object();
   }
 }
 
@@ -1074,17 +1066,21 @@ const Register& Assembler::AppropriateZeroRegFor(const CPURegister& reg) const {
 
 inline void Assembler::CheckBufferSpace() {
   DCHECK_LT(pc_, buffer_start_ + buffer_->size());
-  if (buffer_space() < kGap) {
+  if (V8_UNLIKELY(buffer_space() < kGap)) {
     GrowBuffer();
   }
 }
 
-inline void Assembler::CheckBuffer() {
+V8_INLINE void Assembler::CheckBuffer() {
   CheckBufferSpace();
   if (pc_offset() >= next_veneer_pool_check_) {
     CheckVeneerPool(false, true);
   }
   constpool_.MaybeCheck();
+}
+
+EnsureSpace::EnsureSpace(Assembler* assembler) : block_pools_scope_(assembler) {
+  assembler->CheckBufferSpace();
 }
 
 }  // namespace internal

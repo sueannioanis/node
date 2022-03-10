@@ -138,8 +138,7 @@ async function checkFiles(...files) {
     const data = JSON.parse(stdout);
     for (const { file, line, column, message } of data) {
       console.error(
-        `::error file=${file},line=${line},col=${column}::` +
-          `${file}:${line}:${column}: ${message}`
+        `::error file=${file},line=${line},col=${column}::${file}:${line}:${column}: ${message}`
       );
     }
   }
@@ -167,11 +166,11 @@ if (
   const entryPoint = resolve(process.argv[2]);
   const stats = statSync(entryPoint, { throwIfNoEntry: false });
 
-  function onError(e) {
+  const onError = (e) => {
     console.log(USAGE_STR);
     console.error(e);
     process.exitCode = 1;
-  }
+  };
   if (stats?.isDirectory()) {
     SPAWN_OPTIONS.cwd = entryPoint;
     checkFiles(...findScriptFilesRecursively(entryPoint)).catch(onError);

@@ -1,12 +1,14 @@
 'use strict';
 
 const common = require('../common');
+const fixtures = require('../common/fixtures');
 
 if (!common.hasCrypto)
   common.skip('missing crypto');
 
 const assert = require('assert');
-const { subtle } = require('crypto').webcrypto;
+const crypto = require('crypto');
+const { subtle } = crypto.webcrypto;
 
 const sizes = [1024];
 
@@ -14,7 +16,7 @@ const hashes = [
   'SHA-1',
   'SHA-256',
   'SHA-384',
-  'SHA-512'
+  'SHA-512',
 ];
 
 const keyData = {
@@ -115,7 +117,7 @@ const testVectors = [
     name: 'NODE-DSA',
     privateUsages: ['sign'],
     publicUsages: ['verify']
-  }
+  },
 ];
 
 (async function() {
@@ -132,3 +134,31 @@ const testVectors = [
   });
   await Promise.all(variations);
 })().then(common.mustCall());
+
+{
+  const ecPublic = crypto.createPublicKey(
+    fixtures.readKey('ec_p256_public.pem'));
+  const ecPrivate = crypto.createPrivateKey(
+    fixtures.readKey('ec_p256_private.pem'));
+
+  assert.rejects(subtle.importKey(
+    'node.keyObject',
+    ecPublic,
+    { name: 'NODE-DSA', hash: 'SHA-256' },
+    true, ['verify']), { message: /Invalid key type/ });
+  assert.rejects(subtle.importKey(
+    'node.keyObject',
+    ecPrivate,
+    { name: 'NODE-DSA', hash: 'SHA-256' },
+    true, ['sign']), { message: /Invalid key type/ });
+  assert.rejects(subtle.importKey(
+    'spki',
+    ecPublic.export({ format: 'der', type: 'spki' }),
+    { name: 'NODE-DSA', hash: 'SHA-256' },
+    true, ['verify']), { message: /Invalid key type/ });
+  assert.rejects(subtle.importKey(
+    'pkcs8',
+    ecPrivate.export({ format: 'der', type: 'pkcs8' }),
+    { name: 'NODE-DSA', hash: 'SHA-256' },
+    true, ['sign']), { message: /Invalid key type/ });
+}
