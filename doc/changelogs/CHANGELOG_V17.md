@@ -8,6 +8,8 @@
 </tr>
 <tr>
 <td>
+<a href="#17.7.2">17.7.2</a><br/>
+<a href="#17.7.1">17.7.1</a><br/>
 <a href="#17.7.0">17.7.0</a><br/>
 <a href="#17.6.0">17.6.0</a><br/>
 <a href="#17.5.0">17.5.0</a><br/>
@@ -40,6 +42,42 @@
   * [0.10.x](CHANGELOG_V010.md)
   * [io.js](CHANGELOG_IOJS.md)
   * [Archive](CHANGELOG_ARCHIVE.md)
+
+<a id="17.7.2"></a>
+
+## 2022-03-17, Version 17.7.2 (Current), @richardlau
+
+This is a security release.
+
+### Notable Changes
+
+Update to OpenSSL 3.0.2, which addresses the following vulnerability:
+
+* Infinite loop in `BN_mod_sqrt()` reachable when parsing certificates (High)(CVE-2022-0778)
+  More details are available at <https://www.openssl.org/news/secadv/20220315.txt>
+
+### Commits
+
+* \[[`55e293e05f`](https://github.com/nodejs/node/commit/55e293e05f)] - **deps**: update archs files for quictls/openssl-3.0.2+quic (Hassaan Pasha) [#42356](https://github.com/nodejs/node/pull/42356)
+* \[[`b8d090603d`](https://github.com/nodejs/node/commit/b8d090603d)] - **deps**: upgrade openssl sources to quictls/openssl-3.0.2+quic (Hassaan Pasha) [#42356](https://github.com/nodejs/node/pull/42356)
+* \[[`c8b6d92af0`](https://github.com/nodejs/node/commit/c8b6d92af0)] - **test**: fix tests affected by OpenSSL update (Michael Dawson) [#42356](https://github.com/nodejs/node/pull/42356)
+* \[[`457e31ea09`](https://github.com/nodejs/node/commit/457e31ea09)] - **test**: renew certificates for specific test (Luigi Pinca) [#42342](https://github.com/nodejs/node/pull/42342)
+
+<a id="17.7.1"></a>
+
+## 2022-03-10, Version 17.7.1 (Current), @BethGriggs prepared by @sxa
+
+### Notable Changes
+
+#### Fixed regression in url.resolve()
+
+This release fixes an issue introduced in Node.js v17.7.0 with some URLs
+that contain `@`. This issue affected yarn 1. This version reverts the
+change that introduced the regression.
+
+### Commits
+
+* \[[`96a9e00fb3`](https://github.com/nodejs/node/commit/96a9e00fb3)] - **url**: revert fix url.parse() for `@hostname` (Antoine du Hamel) [#42280](https://github.com/nodejs/node/pull/42280)
 
 <a id="17.7.0"></a>
 
