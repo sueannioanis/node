@@ -11,18 +11,9 @@ description: Install a package
 <!-- see lib/commands/install.js -->
 
 ```bash
-npm install [<@scope>/]<pkg>
-npm install [<@scope>/]<pkg>@<tag>
-npm install [<@scope>/]<pkg>@<version>
-npm install [<@scope>/]<pkg>@<version range>
-npm install <alias>@npm:<name>
-npm install <folder>
-npm install <tarball file>
-npm install <tarball url>
-npm install <git:// url>
-npm install <github username>/<github project>
+npm install [<package-spec> ...]
 
-aliases: i, in, ins, inst, insta, instal, isnt, isnta, isntal, isntall, add
+aliases: add, i, in, ins, inst, insta, instal, isnt, isnta, isntal, isntall
 ```
 
 <!-- automatically generated, do not edit manually -->
@@ -91,12 +82,12 @@ into a tarball (b).
     *npm will not install the package dependencies* in the directory `<folder>`,
     but it will create a symlink to `<folder>`.
 
-    > NOTE: If you want to install the content of a directory like a package from the registry instead of creating a link, you would need to use [`npm pack`](/commands/npm-pack) while in the `<folder>` directory, and then install the resulting tarball instead of the `<folder>` using `npm install <tarball file>`
+    > NOTE: If you want to install the content of a directory like a package from the registry instead of creating a link, you would need to use the `--install-links` option.
 
     Example:
 
     ```bash
-    npm install ../../other-package
+    npm install ../../other-package --install-links
     npm install ./sub-package
     ```
 
@@ -432,8 +423,7 @@ These are some of the most common options related to installation.
 <!-- see lib/utils/config/definitions.js -->
 #### `save`
 
-* Default: `true` unless when using `npm update` or `npm dedupe` where it
-  defaults to `false`
+* Default: `true` unless when using `npm update` where it defaults to `false`
 * Type: Boolean
 
 Save installed packages to a `package.json` file as dependencies.
@@ -552,10 +542,6 @@ this warning is treated as a failure.
 
 If set to false, then ignore `package-lock.json` files when installing. This
 will also prevent _writing_ `package-lock.json` if `save` is true.
-
-When package package-locks are disabled, automatic pruning of extraneous
-modules will also be disabled. To remove extraneous modules with
-package-locks disabled use `npm prune`.
 
 This configuration does not affect `npm ci`.
 
@@ -704,6 +690,20 @@ Include the workspace root when workspaces are enabled for a command.
 When false, specifying individual workspaces via the `workspace` config, or
 all workspaces via the `workspaces` flag, will cause npm to operate only on
 the specified workspaces, and not on the root project.
+
+This value is not exported to the environment for child processes.
+
+<!-- automatically generated, do not edit manually -->
+<!-- see lib/utils/config/definitions.js -->
+
+#### `install-links`
+
+* Default: false
+* Type: Boolean
+
+When set file: protocol dependencies that exist outside of the project root
+will be packed and installed as regular dependencies instead of creating a
+symlink. This option has no effect on workspaces.
 
 <!-- automatically generated, do not edit manually -->
 <!-- see lib/utils/config/definitions.js -->

@@ -688,8 +688,8 @@ int load_cert_certs(const char *uri,
     int ret = 0;
     char *pass_string;
 
-    if (exclude_http && (strncasecmp(uri, "http://", 7) == 0
-                         || strncasecmp(uri, "https://", 8) == 0)) {
+    if (exclude_http && (OPENSSL_strncasecmp(uri, "http://", 7) == 0
+                         || OPENSSL_strncasecmp(uri, "https://", 8) == 0)) {
         BIO_printf(bio_err, "error: HTTP retrieval not allowed for %s\n", desc);
         return ret;
     }
@@ -1182,20 +1182,22 @@ int set_name_ex(unsigned long *flags, const char *arg)
 
 int set_dateopt(unsigned long *dateopt, const char *arg)
 {
-    if (strcasecmp(arg, "rfc_822") == 0)
+    if (OPENSSL_strcasecmp(arg, "rfc_822") == 0)
         *dateopt = ASN1_DTFLGS_RFC822;
-    else if (strcasecmp(arg, "iso_8601") == 0)
+    else if (OPENSSL_strcasecmp(arg, "iso_8601") == 0)
         *dateopt = ASN1_DTFLGS_ISO8601;
-    return 0;
+    else
+        return 0;
+    return 1;
 }
 
 int set_ext_copy(int *copy_type, const char *arg)
 {
-    if (strcasecmp(arg, "none") == 0)
+    if (OPENSSL_strcasecmp(arg, "none") == 0)
         *copy_type = EXT_COPY_NONE;
-    else if (strcasecmp(arg, "copy") == 0)
+    else if (OPENSSL_strcasecmp(arg, "copy") == 0)
         *copy_type = EXT_COPY_ADD;
-    else if (strcasecmp(arg, "copyall") == 0)
+    else if (OPENSSL_strcasecmp(arg, "copyall") == 0)
         *copy_type = EXT_COPY_ALL;
     else
         return 0;
@@ -1275,7 +1277,7 @@ static int set_table_opts(unsigned long *flags, const char *arg,
     }
 
     for (ptbl = in_tbl; ptbl->name; ptbl++) {
-        if (strcasecmp(arg, ptbl->name) == 0) {
+        if (OPENSSL_strcasecmp(arg, ptbl->name) == 0) {
             *flags &= ~ptbl->mask;
             if (c)
                 *flags |= ptbl->flag;
@@ -1369,8 +1371,8 @@ X509_STORE *setup_verify(const char *CAfile, int noCAfile,
         if (lookup == NULL)
             goto end;
         if (CAfile != NULL) {
-            if (!X509_LOOKUP_load_file_ex(lookup, CAfile, X509_FILETYPE_PEM,
-                                          libctx, propq)) {
+            if (X509_LOOKUP_load_file_ex(lookup, CAfile, X509_FILETYPE_PEM,
+                                          libctx, propq) <= 0) {
                 BIO_printf(bio_err, "Error loading file %s\n", CAfile);
                 goto end;
             }
@@ -1385,7 +1387,7 @@ X509_STORE *setup_verify(const char *CAfile, int noCAfile,
         if (lookup == NULL)
             goto end;
         if (CApath != NULL) {
-            if (!X509_LOOKUP_add_dir(lookup, CApath, X509_FILETYPE_PEM)) {
+            if (X509_LOOKUP_add_dir(lookup, CApath, X509_FILETYPE_PEM) <= 0) {
                 BIO_printf(bio_err, "Error loading directory %s\n", CApath);
                 goto end;
             }

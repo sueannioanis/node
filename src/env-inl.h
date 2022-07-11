@@ -25,11 +25,11 @@
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
 #include "aliased_buffer.h"
-#include "allocated_buffer-inl.h"
 #include "callback_queue-inl.h"
 #include "env.h"
 #include "node.h"
 #include "node_context_data.h"
+#include "node_internals.h"
 #include "node_perf_common.h"
 #include "util-inl.h"
 #include "uv.h"
@@ -42,6 +42,16 @@
 #include <utility>
 
 namespace node {
+
+NoArrayBufferZeroFillScope::NoArrayBufferZeroFillScope(
+    IsolateData* isolate_data)
+    : node_allocator_(isolate_data->node_allocator()) {
+  if (node_allocator_ != nullptr) node_allocator_->zero_fill_field()[0] = 0;
+}
+
+NoArrayBufferZeroFillScope::~NoArrayBufferZeroFillScope() {
+  if (node_allocator_ != nullptr) node_allocator_->zero_fill_field()[0] = 1;
+}
 
 inline v8::Isolate* IsolateData::isolate() const {
   return isolate_;
@@ -107,8 +117,7 @@ inline void AsyncHooks::SetJSPromiseHooks(v8::Local<v8::Function> init,
   js_promise_hooks_[3].Reset(env()->isolate(), resolve);
   for (auto it = contexts_.begin(); it != contexts_.end(); it++) {
     if (it->IsEmpty()) {
-      it = contexts_.erase(it);
-      it--;
+      contexts_.erase(it--);
       continue;
     }
     PersistentToLocal::Weak(env()->isolate(), *it)
@@ -170,8 +179,6 @@ inline bool AsyncHooks::pop_async_context(double async_id) {
 
   // Ask for the async_id to be restored as a check that the stack
   // hasn't been corrupted.
-  // Since async_hooks is experimental, do only perform the check
-  // when async_hooks is enabled.
   if (UNLIKELY(fields_[kCheck] > 0 &&
                async_id_fields_[kExecutionAsyncId] != async_id)) {
     FailWithCorruptedAsyncStack(async_id);
@@ -251,12 +258,11 @@ inline void AsyncHooks::AddContext(v8::Local<v8::Context> ctx) {
 inline void AsyncHooks::RemoveContext(v8::Local<v8::Context> ctx) {
   v8::Isolate* isolate = env()->isolate();
   v8::HandleScope handle_scope(isolate);
+  contexts_.erase(std::remove_if(contexts_.begin(),
+                                 contexts_.end(),
+                                 [&](auto&& el) { return el.IsEmpty(); }),
+                  contexts_.end());
   for (auto it = contexts_.begin(); it != contexts_.end(); it++) {
-    if (it->IsEmpty()) {
-      it = contexts_.erase(it);
-      it--;
-      continue;
-    }
     v8::Local<v8::Context> saved_context =
       PersistentToLocal::Weak(isolate, *it);
     if (saved_context == ctx) {
@@ -981,7 +987,7 @@ inline uv_buf_t Environment::allocate_managed_buffer(
   std::unique_ptr<v8::BackingStore> bs =
       v8::ArrayBuffer::NewBackingStore(isolate(), suggested_size);
   uv_buf_t buf = uv_buf_init(static_cast<char*>(bs->Data()), bs->ByteLength());
-  released_allocated_buffers()->emplace(buf.base, std::move(bs));
+  released_allocated_buffers_.emplace(buf.base, std::move(bs));
   return buf;
 }
 
@@ -989,18 +995,12 @@ inline std::unique_ptr<v8::BackingStore> Environment::release_managed_buffer(
     const uv_buf_t& buf) {
   std::unique_ptr<v8::BackingStore> bs;
   if (buf.base != nullptr) {
-    auto map = released_allocated_buffers();
-    auto it = map->find(buf.base);
-    CHECK_NE(it, map->end());
+    auto it = released_allocated_buffers_.find(buf.base);
+    CHECK_NE(it, released_allocated_buffers_.end());
     bs = std::move(it->second);
-    map->erase(it);
+    released_allocated_buffers_.erase(it);
   }
   return bs;
-}
-
-std::unordered_map<char*, std::unique_ptr<v8::BackingStore>>*
-    Environment::released_allocated_buffers() {
-  return &released_allocated_buffers_;
 }
 
 inline void Environment::ThrowError(const char* errmsg) {

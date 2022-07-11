@@ -15,8 +15,7 @@ class Link extends ArboristWorkspaceCmd {
   static description = 'Symlink a package folder'
   static name = 'link'
   static usage = [
-    '(in package dir)',
-    '[<@scope>/]<pkg>[@<version>]',
+    '[<package-spec>]',
   ]
 
   static params = [
@@ -43,7 +42,7 @@ class Link extends ArboristWorkspaceCmd {
   }
 
   async exec (args) {
-    if (this.npm.config.get('global')) {
+    if (this.npm.global) {
       throw Object.assign(
         new Error(
           'link should never be --global.\n' +

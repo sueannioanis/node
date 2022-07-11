@@ -34,8 +34,8 @@
 #include "handle_wrap.h"
 #include "node.h"
 #include "node_binding.h"
-#include "node_external_reference.h"
 #include "node_main_instance.h"
+#include "node_native_module.h"
 #include "node_options.h"
 #include "node_perf_common.h"
 #include "node_snapshotable.h"
@@ -136,6 +136,19 @@ enum class FsStatsOffset {
 // because `fs.StatWatcher` needs room to store 2 `fs.Stats` instances.
 constexpr size_t kFsStatsBufferLength =
     static_cast<size_t>(FsStatsOffset::kFsStatsFieldsNumber) * 2;
+
+// Disables zero-filling for ArrayBuffer allocations in this scope. This is
+// similar to how we implement Buffer.allocUnsafe() in JS land.
+class NoArrayBufferZeroFillScope {
+ public:
+  inline explicit NoArrayBufferZeroFillScope(IsolateData* isolate_data);
+  inline ~NoArrayBufferZeroFillScope();
+
+ private:
+  NodeArrayBufferAllocator* node_allocator_;
+
+  friend class Environment;
+};
 
 // PER_ISOLATE_* macros: We have a lot of per-isolate properties
 // and adding and maintaining their getters and setters by hand would be
@@ -530,6 +543,7 @@ constexpr size_t kFsStatsBufferLength =
   V(inspector_console_extension_installer, v8::Function)                       \
   V(inspector_disable_async_hooks, v8::Function)                               \
   V(inspector_enable_async_hooks, v8::Function)                                \
+  V(maybe_cache_generated_source_map, v8::Function)                            \
   V(messaging_deserialize_create_object, v8::Function)                         \
   V(message_port, v8::Object)                                                  \
   V(native_module_require, v8::Function)                                       \
@@ -545,19 +559,23 @@ constexpr size_t kFsStatsBufferLength =
   V(promise_hook_handler, v8::Function)                                        \
   V(promise_reject_callback, v8::Function)                                     \
   V(script_data_constructor_function, v8::Function)                            \
+  V(snapshot_serialize_callback, v8::Function)                                 \
+  V(snapshot_deserialize_callback, v8::Function)                               \
+  V(snapshot_deserialize_main, v8::Function)                                   \
   V(source_map_cache_getter, v8::Function)                                     \
   V(tick_callback_function, v8::Function)                                      \
   V(timers_callback_function, v8::Function)                                    \
   V(tls_wrap_constructor_function, v8::Function)                               \
   V(trace_category_state_function, v8::Function)                               \
   V(udp_constructor_function, v8::Function)                                    \
-  V(url_constructor_function, v8::Function)
+  V(url_constructor_function, v8::Function)                                    \
+  V(wasm_streaming_compilation_impl, v8::Function)                             \
+  V(wasm_streaming_object_constructor, v8::Function)
 
 class Environment;
-struct AllocatedBuffer;
 
 typedef size_t SnapshotIndex;
-class IsolateData : public MemoryRetainer {
+class NODE_EXTERN_PRIVATE IsolateData : public MemoryRetainer {
  public:
   IsolateData(v8::Isolate* isolate,
               uv_loop_t* event_loop,
@@ -972,10 +990,22 @@ struct EnvSerializeInfo {
 };
 
 struct SnapshotData {
-  SnapshotData() { blob.data = nullptr; }
-  v8::StartupData blob;
+  // The result of v8::SnapshotCreator::CreateBlob() during the snapshot
+  // building process.
+  v8::StartupData v8_snapshot_blob_data;
+
+  static const size_t kNodeBaseContextIndex = 0;
+  static const size_t kNodeMainContextIndex = kNodeBaseContextIndex + 1;
+
   std::vector<size_t> isolate_data_indices;
+  // TODO(joyeecheung): there should be a vector of env_info once we snapshot
+  // the worker environments.
   EnvSerializeInfo env_info;
+  // A vector of built-in ids and v8::ScriptCompiler::CachedData, this can be
+  // shared across Node.js instances because they are supposed to share the
+  // read only space. We use native_module::CodeCacheInfo because
+  // v8::ScriptCompiler::CachedData is not copyable.
+  std::vector<native_module::CodeCacheInfo> code_cache;
 };
 
 class Environment : public MemoryRetainer {
@@ -1307,6 +1337,10 @@ class Environment : public MemoryRetainer {
 
   void RunWeakRefCleanup();
 
+  v8::MaybeLocal<v8::Value> RunSnapshotSerializeCallback() const;
+  v8::MaybeLocal<v8::Value> RunSnapshotDeserializeCallback() const;
+  v8::MaybeLocal<v8::Value> RunSnapshotDeserializeMain() const;
+
   // Strings and private symbols are shared across shared contexts
   // The getters simply proxy to the per-isolate primitive.
 #define VP(PropertyName, StringValue) V(v8::Private, PropertyName)
@@ -1457,8 +1491,6 @@ class Environment : public MemoryRetainer {
   inline uv_buf_t allocate_managed_buffer(const size_t suggested_size);
   inline std::unique_ptr<v8::BackingStore> release_managed_buffer(
       const uv_buf_t& buf);
-  inline std::unordered_map<char*, std::unique_ptr<v8::BackingStore>>*
-      released_allocated_buffers();
 
   void AddUnmanagedFd(int fd);
   void RemoveUnmanagedFd(int fd);
@@ -1632,8 +1664,8 @@ class Environment : public MemoryRetainer {
   // the source passed to LoadEnvironment() directly instead.
   std::unique_ptr<v8::String::Value> main_utf16_;
 
-  // Used by AllocatedBuffer::release() to keep track of the BackingStore for
-  // a given pointer.
+  // Used by allocate_managed_buffer() and release_managed_buffer() to keep
+  // track of the BackingStore for a given pointer.
   std::unordered_map<char*, std::unique_ptr<v8::BackingStore>>
       released_allocated_buffers_;
 };

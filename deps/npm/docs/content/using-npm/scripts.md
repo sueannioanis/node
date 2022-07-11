@@ -203,6 +203,12 @@ will default the `start` command to `node server.js`.  `prestart` and
 * `test`
 * `posttest`
 
+#### [`npm version`](/commands/npm-version)
+
+* `preversion`
+* `version`
+* `postversion`
+
 #### A Note on a lack of [`npm uninstall`](/commands/npm-uninstall) scripts
 
 While npm v6 had `uninstall` lifecycle scripts, npm v7 does not. Removal of a package can happen for a wide variety of reasons, and there's no clear way to currently give the script enough context to be useful.
@@ -339,7 +345,7 @@ file.
 * Don't prefix your script commands with "sudo".  If root permissions
   are required for some reason, then it'll fail with that error, and
   the user will sudo the npm command in question.
-* Don't use `install`. Use a `.gyp` file for compilation, and `prepublish`
+* Don't use `install`. Use a `.gyp` file for compilation, and `prepare`
   for anything else. You should almost never have to explicitly set a
   preinstall or install script. If you are doing this, please consider if
   there is another option. The only valid use of `install` or `preinstall`

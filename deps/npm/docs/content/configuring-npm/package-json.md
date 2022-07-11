@@ -222,7 +222,7 @@ npm also sets a top-level "maintainers" field with your npm user info.
 
 ### funding
 
-You can specify an object containing an URL that provides up-to-date
+You can specify an object containing a URL that provides up-to-date
 information about ways to help fund development of your package, or a
 string URL, or an array of these:
 
@@ -642,6 +642,26 @@ git+ssh://git@github.com:npm/cli#semver:^5.0
 git+https://isaacs@github.com/npm/cli.git
 git://github.com/npm/cli.git#v1.0.27
 ```
+
+When installing from a `git` repository, the presence of certain fields in the
+`package.json` will cause npm to believe it needs to perform a build. To do so
+your repository will be cloned into a temporary directory, all of its deps
+installed, relevant scripts run, and the resulting directory packed and
+installed.
+
+This flow will occur if your git dependency uses `workspaces`, or if any of the
+following scripts are present:
+
+* `build`
+* `prepare`
+* `prepack`
+* `preinstall`
+* `install`
+* `postinstall`
+
+If your git repository includes pre-built artifacts, you will likely want to
+make sure that none of the above scripts are defined, or your dependency
+will be rebuilt for every installation.
 
 #### GitHub URLs
 

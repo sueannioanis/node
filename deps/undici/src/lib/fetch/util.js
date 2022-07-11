@@ -3,6 +3,7 @@
 const { redirectStatus } = require('./constants')
 const { performance } = require('perf_hooks')
 const { isBlobLike, toUSVString, ReadableStreamFrom } = require('../core/util')
+const assert = require('assert')
 
 let File
 
@@ -195,7 +196,7 @@ function appendFetchMetadata (httpRequest) {
   header = httpRequest.mode
 
   //  4. Set a structured field value `Sec-Fetch-Mode`/header in r’s header list.
-  httpRequest.headersList.append('sec-fetch-mode', header)
+  httpRequest.headersList.set('sec-fetch-mode', header)
 
   //  https://w3c.github.io/webappsec-fetch-metadata/#sec-fetch-site-header
   //  TODO
@@ -214,10 +215,9 @@ function appendRequestOriginHeader (request) {
     if (serializedOrigin) {
       request.headersList.append('Origin', serializedOrigin)
     }
-  }
 
   // 3. Otherwise, if request’s method is neither `GET` nor `HEAD`, then:
-  else if (request.method !== 'GET' && request.method !== 'HEAD') {
+  } else if (request.method !== 'GET' && request.method !== 'HEAD') {
     // 1. Switch on request’s referrer policy:
     switch (request.referrerPolicy) {
       case 'no-referrer':
@@ -307,7 +307,7 @@ function sameOrigin (A, B) {
   // 1. If A and B are the same opaque origin, then return true.
   // "opaque origin" is an internal value we cannot access, ignore.
 
-  // 2. If A and B are both tuple origins and their schemes, 
+  // 2. If A and B are both tuple origins and their schemes,
   //    hosts, and port are identical, then return true.
   if (A.protocol === B.protocol && A.hostname === B.hostname && A.port === B.port) {
     return true
@@ -315,12 +315,6 @@ function sameOrigin (A, B) {
 
   // 3. Return false.
   return false
-}
-
-// https://fetch.spec.whatwg.org/#corb-check
-function CORBCheck (request, response) {
-  // TODO
-  return 'allowed'
 }
 
 function createDeferredPromise () {
@@ -334,14 +328,69 @@ function createDeferredPromise () {
   return { promise, resolve: res, reject: rej }
 }
 
-class ServiceWorkerGlobalScope {} // dummy
-class Window {} // dummy
-class EnvironmentSettingsObject {} // dummy
+function isAborted (fetchParams) {
+  return fetchParams.controller.state === 'aborted'
+}
+
+function isCancelled (fetchParams) {
+  return fetchParams.controller.state === 'aborted' ||
+    fetchParams.controller.state === 'terminated'
+}
+
+// https://fetch.spec.whatwg.org/#concept-method-normalize
+function normalizeMethod (method) {
+  return /^(DELETE|GET|HEAD|OPTIONS|POST|PUT)$/i.test(method)
+    ? method.toUpperCase()
+    : method
+}
+
+// https://infra.spec.whatwg.org/#serialize-a-javascript-value-to-a-json-string
+function serializeJavascriptValueToJSONString (value) {
+  // 1. Let result be ? Call(%JSON.stringify%, undefined, « value »).
+  const result = JSON.stringify(value)
+
+  // 2. If result is undefined, then throw a TypeError.
+  if (result === undefined) {
+    throw new TypeError('Value is not JSON serializable')
+  }
+
+  // 3. Assert: result is a string.
+  assert(typeof result === 'string')
+
+  // 4. Return result.
+  return result
+}
+
+// https://tc39.es/ecma262/#sec-%25iteratorprototype%25-object
+const esIteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()))
+
+// https://webidl.spec.whatwg.org/#dfn-iterator-prototype-object
+function makeIterator (iterator, name) {
+  const i = {
+    next () {
+      if (Object.getPrototypeOf(this) !== i) {
+        throw new TypeError(
+          `'next' called on an object that does not implement interface ${name} Iterator.`
+        )
+      }
+
+      return iterator.next()
+    },
+    // The class string of an iterator prototype object for a given interface is the
+    // result of concatenating the identifier of the interface and the string " Iterator".
+    [Symbol.toStringTag]: `${name} Iterator`
+  }
+
+  // The [[Prototype]] internal slot of an iterator prototype object must be %IteratorPrototype%.
+  Object.setPrototypeOf(i, esIteratorPrototype)
+  // esIteratorPrototype needs to be the prototype of i
+  // which is the prototype of an empty object. Yes, it's confusing.
+  return Object.setPrototypeOf({}, i)
+}
 
 module.exports = {
-  ServiceWorkerGlobalScope,
-  Window,
-  EnvironmentSettingsObject,
+  isAborted,
+  isCancelled,
   createDeferredPromise,
   ReadableStreamFrom,
   toUSVString,
@@ -367,5 +416,7 @@ module.exports = {
   isFileLike,
   isValidReasonPhrase,
   sameOrigin,
-  CORBCheck
+  normalizeMethod,
+  serializeJavascriptValueToJSONString,
+  makeIterator
 }

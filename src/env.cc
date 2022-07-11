@@ -1,5 +1,4 @@
 #include "env.h"
-#include "allocated_buffer-inl.h"
 #include "async_wrap.h"
 #include "base_object-inl.h"
 #include "debug_utils-inl.h"
@@ -35,6 +34,7 @@ using v8::Array;
 using v8::Boolean;
 using v8::Context;
 using v8::EmbedderGraph;
+using v8::EscapableHandleScope;
 using v8::Function;
 using v8::FunctionTemplate;
 using v8::HandleScope;
@@ -672,10 +672,29 @@ void Environment::PrintSyncTrace() const {
                       isolate(), stack_trace_limit(), StackTrace::kDetailed));
 }
 
+MaybeLocal<Value> Environment::RunSnapshotSerializeCallback() const {
+  EscapableHandleScope handle_scope(isolate());
+  if (!snapshot_serialize_callback().IsEmpty()) {
+    Context::Scope context_scope(context());
+    return handle_scope.EscapeMaybe(snapshot_serialize_callback()->Call(
+        context(), v8::Undefined(isolate()), 0, nullptr));
+  }
+  return handle_scope.Escape(Undefined(isolate()));
+}
+
+MaybeLocal<Value> Environment::RunSnapshotDeserializeMain() const {
+  EscapableHandleScope handle_scope(isolate());
+  if (!snapshot_deserialize_main().IsEmpty()) {
+    Context::Scope context_scope(context());
+    return handle_scope.EscapeMaybe(snapshot_deserialize_main()->Call(
+        context(), v8::Undefined(isolate()), 0, nullptr));
+  }
+  return handle_scope.Escape(Undefined(isolate()));
+}
+
 void Environment::RunCleanup() {
   started_cleanup_ = true;
-  TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
-                              "RunCleanup", this);
+  TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "RunCleanup");
   bindings_.clear();
   CleanupHandles();
 
@@ -717,8 +736,7 @@ void Environment::RunCleanup() {
 }
 
 void Environment::RunAtExitCallbacks() {
-  TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
-                              "AtExit", this);
+  TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "AtExit");
   for (ExitCallback at_exit : at_exit_functions_) {
     at_exit.cb_(at_exit.arg_);
   }
@@ -744,8 +762,8 @@ void Environment::RunAndClearInterrupts() {
 }
 
 void Environment::RunAndClearNativeImmediates(bool only_refed) {
-  TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
-                              "RunAndClearNativeImmediates", this);
+  TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment),
+               "RunAndClearNativeImmediates");
   HandleScope handle_scope(isolate_);
   InternalCallbackScope cb_scope(this, Object::New(isolate_), { 0, 0 });
 
@@ -849,8 +867,7 @@ void Environment::ToggleTimerRef(bool ref) {
 
 void Environment::RunTimers(uv_timer_t* handle) {
   Environment* env = Environment::from_timer_handle(handle);
-  TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
-                              "RunTimers", env);
+  TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "RunTimers");
 
   if (!env->can_call_into_js())
     return;
@@ -911,8 +928,7 @@ void Environment::RunTimers(uv_timer_t* handle) {
 
 void Environment::CheckImmediate(uv_check_t* handle) {
   Environment* env = Environment::from_immediate_check_handle(handle);
-  TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
-                              "CheckImmediate", env);
+  TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "CheckImmediate");
 
   HandleScope scope(env->isolate());
   Context::Scope context_scope(env->context());

@@ -13,6 +13,7 @@ class File extends Blob {
 
     // 1. Let bytes be the result of processing blob parts given fileBits and
     // options.
+    // TODO
 
     // 2. Let n be the fileName argument to the constructor.
     const n = fileName
@@ -42,6 +43,7 @@ class File extends Blob {
     // F.name is set to n.
     // F.type is set to t.
     // F.lastModified is set to d.
+    // TODO
 
     super(fileBits, { type: t })
     this[kState] = {
@@ -67,10 +69,6 @@ class File extends Blob {
   }
 
   get [Symbol.toStringTag] () {
-    if (!(this instanceof File)) {
-      throw new TypeError('Illegal invocation')
-    }
-
     return this.constructor.name
   }
 }
@@ -188,10 +186,6 @@ class FileLike {
   }
 
   get [Symbol.toStringTag] () {
-    if (!(this instanceof FileLike)) {
-      throw new TypeError('Illegal invocation')
-    }
-
     return 'File'
   }
 }
