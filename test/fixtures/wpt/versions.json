@@ -4,11 +4,11 @@
     "path": "common"
   },
   "console": {
-    "commit": "3b1f72e99a91d31551edd2147dc7b564eaf25d72",
+    "commit": "767ae354642bee1e4d90b28df4480475b9260e14",
     "path": "console"
   },
   "dom/abort": {
-    "commit": "c49cafb491d99d6318f8f24a26936cc66501f412",
+    "commit": "8fadb381209a215280dc3ad96d0f135b6005f176",
     "path": "dom/abort"
   },
   "dom/events": {
@@ -16,15 +16,23 @@
     "path": "dom/events"
   },
   "encoding": {
-    "commit": "35f70910d3753c8b650fdfd4c716caedfefe88c9",
+    "commit": "c1b24fce6e625c1b79124a58f27bf9adce02d5d7",
     "path": "encoding"
+  },
+  "fetch/data-urls/resources": {
+    "commit": "7c79d998ff42e52de90290cb847d1b515b3b58f7",
+    "path": "fetch/data-urls/resources"
   },
   "FileAPI": {
     "commit": "3b279420d40afea32506e823f9ac005448f4f3d8",
     "path": "FileAPI"
   },
+  "FileAPI/file": {
+    "commit": "c01f637cca43f0e08ce8e4269121dcd89ccbdd82",
+    "path": "FileAPI/file"
+  },
   "hr-time": {
-    "commit": "9910784394858a8e34d9eb4e5d00788765abf837",
+    "commit": "34cafd797e58dad280d20040eee012d49ccfa91f",
     "path": "hr-time"
   },
   "html/webappapis/atob": {
@@ -44,19 +52,23 @@
     "path": "html/webappapis/timers"
   },
   "interfaces": {
-    "commit": "fc086c82d5a7e9b01a684a23336d6d1f9e79e303",
+    "commit": "df731dab88a1a25c04eb7e6238c11dc28fda0801",
     "path": "interfaces"
   },
   "performance-timeline": {
     "commit": "17ebc3aea0d6321e69554067c39ab5855e6fb67e",
     "path": "performance-timeline"
   },
+  "resource-timing": {
+    "commit": "22d38586d04c1d22b64db36f439c6bb84f03db7d",
+    "path": "resource-timing"
+  },
   "resources": {
-    "commit": "c5b428f15acfb17fe59b5a6f04a21c288a76ed36",
+    "commit": "fbf1e7d24776b6da144dbca45c22d39dc0512d2d",
     "path": "resources"
   },
   "streams": {
-    "commit": "8f60d9443949c323522a2009518d54d5d6ab5541",
+    "commit": "9e5ef42bd34b5b19b76d0d4cb19012e52c222664",
     "path": "streams"
   },
   "url": {
@@ -68,7 +80,7 @@
     "path": "user-timing"
   },
   "wasm/jsapi": {
-    "commit": "1dd414c79616489ea021c800eb0375a709e8114e",
+    "commit": "d8dbe6990bed03ec03beee25069a9347d4c3d6d5",
     "path": "wasm/jsapi"
   },
   "wasm/webapi": {
@@ -76,7 +88,7 @@
     "path": "wasm/webapi"
   },
   "WebCryptoAPI": {
-    "commit": "cdd0f03df41b222aed098fbbb11c6a3cc500a86b",
+    "commit": "21ccdcd8143d494024639c9e53bad565c9733831",
     "path": "WebCryptoAPI"
   },
   "webidl/ecmascript-binding/es-exceptions": {

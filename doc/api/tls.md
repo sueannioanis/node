@@ -683,8 +683,8 @@ is set to describe how authorization failed. Depending on the settings
 of the TLS server, unauthorized connections may still be accepted.
 
 The `tlsSocket.alpnProtocol` property is a string that contains the selected
-ALPN protocol. When ALPN has no selected protocol, `tlsSocket.alpnProtocol`
-equals `false`.
+ALPN protocol. When ALPN has no selected protocol because the client or the
+server did not send an ALPN extension, `tlsSocket.alpnProtocol` equals `false`.
 
 The `tlsSocket.servername` property is a string containing the server name
 requested via SNI.
@@ -807,7 +807,7 @@ negotiation.
 Instances of `tls.TLSSocket` implement the duplex [Stream][] interface.
 
 Methods that return TLS connection metadata (e.g.
-[`tls.TLSSocket.getPeerCertificate()`][] will only return data while the
+[`tls.TLSSocket.getPeerCertificate()`][]) will only return data while the
 connection is open.
 
 ### `new tls.TLSSocket(socket[, options])`
@@ -1098,17 +1098,17 @@ changes:
   * `name` {string} OpenSSL name for the cipher suite.
   * `standardName` {string} IETF name for the cipher suite.
   * `version` {string} The minimum TLS protocol version supported by this cipher
-    suite.
+    suite. For the actual negotiated protocol, see [`tls.TLSSocket.getProtocol()`][].
 
 Returns an object containing information on the negotiated cipher suite.
 
-For example:
+For example, a TLSv1.2 protocol with AES256-SHA cipher:
 
 ```json
 {
-    "name": "AES128-SHA256",
-    "standardName": "TLS_RSA_WITH_AES_128_CBC_SHA256",
-    "version": "TLSv1.2"
+    "name": "AES256-SHA",
+    "standardName": "TLS_RSA_WITH_AES_256_CBC_SHA",
+    "version": "SSLv3"
 }
 ```
 
@@ -1173,6 +1173,9 @@ certificate.
 
 <!-- YAML
 changes:
+  - version: v19.1.0
+    pr-url: https://github.com/nodejs/node/pull/44935
+    description: Add "ca" property.
   - version:
       - v17.2.0
       - v16.14.0
@@ -1186,6 +1189,7 @@ changes:
 A certificate object has properties corresponding to the fields of the
 certificate.
 
+* `ca` {boolean} `true` if a Certificate Authority (CA), `false` otherwise.
 * `raw` {Buffer} The DER encoded X.509 certificate data.
 * `subject` {Object} The certificate subject, described in terms of
   Country (`C`), StateOrProvince (`ST`), Locality (`L`), Organization (`O`),
@@ -2012,6 +2016,11 @@ where `secureSocket` has the same API as `pair.cleartext`.
 <!-- YAML
 added: v0.3.2
 changes:
+  - version: v19.0.0
+    pr-url: https://github.com/nodejs/node/pull/44031
+    description: If `ALPNProtocols` is set, incoming connections that send an
+                 ALPN extension with no supported protocols are terminated with
+                 a fatal `no_application_protocol` alert.
   - version: v12.3.0
     pr-url: https://github.com/nodejs/node/pull/27665
     description: The `options` parameter now supports `net.createServer()`
@@ -2117,7 +2126,7 @@ const options = {
   requestCert: true,
 
   // This is necessary only if the client uses a self-signed certificate.
-  ca: [ fs.readFileSync('client-cert.pem') ]
+  ca: [ fs.readFileSync('client-cert.pem') ],
 };
 
 const server = tls.createServer(options, (socket) => {
@@ -2242,7 +2251,7 @@ added: v11.4.0
 [`SSL_export_keying_material`]: https://www.openssl.org/docs/man1.1.1/man3/SSL_export_keying_material.html
 [`SSL_get_version`]: https://www.openssl.org/docs/man1.1.1/man3/SSL_get_version.html
 [`crypto.getCurves()`]: crypto.md#cryptogetcurves
-[`import()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import#dynamic_imports
+[`import()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/import
 [`net.Server.address()`]: net.md#serveraddress
 [`net.Server`]: net.md#class-netserver
 [`net.Socket`]: net.md#class-netsocket
@@ -2258,6 +2267,7 @@ added: v11.4.0
 [`tls.Server`]: #class-tlsserver
 [`tls.TLSSocket.enableTrace()`]: #tlssocketenabletrace
 [`tls.TLSSocket.getPeerCertificate()`]: #tlssocketgetpeercertificatedetailed
+[`tls.TLSSocket.getProtocol()`]: #tlssocketgetprotocol
 [`tls.TLSSocket.getSession()`]: #tlssocketgetsession
 [`tls.TLSSocket.getTLSTicket()`]: #tlssocketgettlsticket
 [`tls.TLSSocket`]: #class-tlstlssocket

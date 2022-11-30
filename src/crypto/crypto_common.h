@@ -33,10 +33,6 @@ void LogSecret(
     const unsigned char* secret,
     size_t secretlen);
 
-bool SetALPN(const SSLPointer& ssl, const std::string& alpn);
-
-bool SetALPN(const SSLPointer& ssl, v8::Local<v8::Value> alpn);
-
 v8::MaybeLocal<v8::Value> GetSSLOCSPResponse(
     Environment* env,
     SSL* ssl,

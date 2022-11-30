@@ -61,7 +61,7 @@ namespace v8impl {
 
 namespace {
 
-inline static napi_status V8NameFromPropertyDescriptor(
+inline napi_status V8NameFromPropertyDescriptor(
     napi_env env,
     const napi_property_descriptor* p,
     v8::Local<v8::Name>* result) {
@@ -79,7 +79,7 @@ inline static napi_status V8NameFromPropertyDescriptor(
 }
 
 // convert from n-api property attributes to v8::PropertyAttribute
-inline static v8::PropertyAttribute V8PropertyAttributesFromDescriptor(
+inline v8::PropertyAttribute V8PropertyAttributesFromDescriptor(
     const napi_property_descriptor* descriptor) {
   unsigned int attribute_flags = v8::PropertyAttribute::None;
 
@@ -100,12 +100,12 @@ inline static v8::PropertyAttribute V8PropertyAttributesFromDescriptor(
   return static_cast<v8::PropertyAttribute>(attribute_flags);
 }
 
-inline static napi_deferred JsDeferredFromNodePersistent(
+inline napi_deferred JsDeferredFromNodePersistent(
     v8impl::Persistent<v8::Value>* local) {
   return reinterpret_cast<napi_deferred>(local);
 }
 
-inline static v8impl::Persistent<v8::Value>* NodePersistentFromJsDeferred(
+inline v8impl::Persistent<v8::Value>* NodePersistentFromJsDeferred(
     napi_deferred local) {
   return reinterpret_cast<v8impl::Persistent<v8::Value>*>(local);
 }
@@ -139,32 +139,30 @@ class EscapableHandleScopeWrapper {
   bool escape_called_;
 };
 
-inline static napi_handle_scope JsHandleScopeFromV8HandleScope(
-    HandleScopeWrapper* s) {
+inline napi_handle_scope JsHandleScopeFromV8HandleScope(HandleScopeWrapper* s) {
   return reinterpret_cast<napi_handle_scope>(s);
 }
 
-inline static HandleScopeWrapper* V8HandleScopeFromJsHandleScope(
-    napi_handle_scope s) {
+inline HandleScopeWrapper* V8HandleScopeFromJsHandleScope(napi_handle_scope s) {
   return reinterpret_cast<HandleScopeWrapper*>(s);
 }
 
-inline static napi_escapable_handle_scope
+inline napi_escapable_handle_scope
 JsEscapableHandleScopeFromV8EscapableHandleScope(
     EscapableHandleScopeWrapper* s) {
   return reinterpret_cast<napi_escapable_handle_scope>(s);
 }
 
-inline static EscapableHandleScopeWrapper*
+inline EscapableHandleScopeWrapper*
 V8EscapableHandleScopeFromJsEscapableHandleScope(
     napi_escapable_handle_scope s) {
   return reinterpret_cast<EscapableHandleScopeWrapper*>(s);
 }
 
-inline static napi_status ConcludeDeferred(napi_env env,
-                                           napi_deferred deferred,
-                                           napi_value result,
-                                           bool is_resolved) {
+inline napi_status ConcludeDeferred(napi_env env,
+                                    napi_deferred deferred,
+                                    napi_value result,
+                                    bool is_resolved) {
   NAPI_PREAMBLE(env);
   CHECK_ARG(env, result);
 
@@ -191,10 +189,10 @@ inline static napi_status ConcludeDeferred(napi_env env,
 
 enum UnwrapAction { KeepWrap, RemoveWrap };
 
-inline static napi_status Unwrap(napi_env env,
-                                 napi_value js_object,
-                                 void** result,
-                                 UnwrapAction action) {
+inline napi_status Unwrap(napi_env env,
+                          napi_value js_object,
+                          void** result,
+                          UnwrapAction action) {
   NAPI_PREAMBLE(env);
   CHECK_ARG(env, js_object);
   if (action == KeepWrap) {
@@ -748,6 +746,7 @@ static const char* error_messages[] = {
     "An arraybuffer was expected",
     "A detachable arraybuffer was expected",
     "Main thread would deadlock",
+    "External buffers are not allowed",
 };
 
 napi_status NAPI_CDECL napi_get_last_error_info(
@@ -759,7 +758,7 @@ napi_status NAPI_CDECL napi_get_last_error_info(
   // message in the `napi_status` enum each time a new error message is added.
   // We don't have a napi_status_last as this would result in an ABI
   // change each time a message was added.
-  const int last_status = napi_would_deadlock;
+  const int last_status = napi_no_external_buffers_allowed;
 
   static_assert(NAPI_ARRAYSIZE(error_messages) == last_status + 1,
                 "Count of error messages must match count of error values");
@@ -2389,10 +2388,12 @@ napi_status NAPI_CDECL napi_create_external(napi_env env,
 
   v8::Local<v8::Value> external_value = v8::External::New(isolate, data);
 
-  // The Reference object will delete itself after invoking the finalizer
-  // callback.
-  v8impl::Reference::New(
-      env, external_value, 0, true, finalize_cb, data, finalize_hint);
+  if (finalize_cb) {
+    // The Reference object will delete itself after invoking the finalizer
+    // callback.
+    v8impl::Reference::New(
+        env, external_value, 0, true, finalize_cb, data, finalize_hint);
+  }
 
   *result = v8impl::JsValueFromV8LocalValue(external_value);
 
@@ -2452,8 +2453,16 @@ napi_status NAPI_CDECL napi_check_object_type_tag(napi_env env,
     napi_type_tag tag;
     val.As<v8::BigInt>()->ToWordsArray(
         &sign, &size, reinterpret_cast<uint64_t*>(&tag));
-    if (size == 2 && sign == 0)
-      *result = (tag.lower == type_tag->lower && tag.upper == type_tag->upper);
+    if (sign == 0) {
+      if (size == 2) {
+        *result =
+            (tag.lower == type_tag->lower && tag.upper == type_tag->upper);
+      } else if (size == 1) {
+        *result = (tag.lower == type_tag->lower && 0 == type_tag->upper);
+      } else if (size == 0) {
+        *result = (0 == type_tag->lower && 0 == type_tag->upper);
+      }
+    }
   }
 
   return GET_RETURN_STATUS(env);
@@ -2772,7 +2781,7 @@ napi_status NAPI_CDECL napi_create_arraybuffer(napi_env env,
   // Optionally return a pointer to the buffer's data, to avoid another call to
   // retrieve it.
   if (data != nullptr) {
-    *data = buffer->GetBackingStore()->Data();
+    *data = buffer->Data();
   }
 
   *result = v8impl::JsValueFromV8LocalValue(buffer);
@@ -2806,15 +2815,14 @@ napi_status NAPI_CDECL napi_get_arraybuffer_info(napi_env env,
   v8::Local<v8::Value> value = v8impl::V8LocalValueFromJsValue(arraybuffer);
   RETURN_STATUS_IF_FALSE(env, value->IsArrayBuffer(), napi_invalid_arg);
 
-  std::shared_ptr<v8::BackingStore> backing_store =
-      value.As<v8::ArrayBuffer>()->GetBackingStore();
+  v8::Local<v8::ArrayBuffer> ab = value.As<v8::ArrayBuffer>();
 
   if (data != nullptr) {
-    *data = backing_store->Data();
+    *data = ab->Data();
   }
 
   if (byte_length != nullptr) {
-    *byte_length = backing_store->ByteLength();
+    *byte_length = ab->ByteLength();
   }
 
   return napi_clear_last_error(env);
@@ -2955,8 +2963,7 @@ napi_status NAPI_CDECL napi_get_typedarray_info(napi_env env,
   }
 
   if (data != nullptr) {
-    *data = static_cast<uint8_t*>(buffer->GetBackingStore()->Data()) +
-            array->ByteOffset();
+    *data = static_cast<uint8_t*>(buffer->Data()) + array->ByteOffset();
   }
 
   if (arraybuffer != nullptr) {
@@ -3036,8 +3043,7 @@ napi_status NAPI_CDECL napi_get_dataview_info(napi_env env,
   }
 
   if (data != nullptr) {
-    *data = static_cast<uint8_t*>(buffer->GetBackingStore()->Data()) +
-            array->ByteOffset();
+    *data = static_cast<uint8_t*>(buffer->Data()) + array->ByteOffset();
   }
 
   if (arraybuffer != nullptr) {
@@ -3233,7 +3239,7 @@ napi_status NAPI_CDECL napi_detach_arraybuffer(napi_env env,
   RETURN_STATUS_IF_FALSE(
       env, it->IsDetachable(), napi_detachable_arraybuffer_expected);
 
-  it->Detach();
+  it->Detach(v8::Local<v8::Value>()).Check();
 
   return napi_clear_last_error(env);
 }
@@ -3247,8 +3253,8 @@ napi_status NAPI_CDECL napi_is_detached_arraybuffer(napi_env env,
 
   v8::Local<v8::Value> value = v8impl::V8LocalValueFromJsValue(arraybuffer);
 
-  *result = value->IsArrayBuffer() &&
-            value.As<v8::ArrayBuffer>()->GetBackingStore()->Data() == nullptr;
+  *result =
+      value->IsArrayBuffer() && value.As<v8::ArrayBuffer>()->WasDetached();
 
   return napi_clear_last_error(env);
 }

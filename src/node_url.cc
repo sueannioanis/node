@@ -1799,12 +1799,11 @@ void Initialize(Local<Object> target,
                 Local<Value> unused,
                 Local<Context> context,
                 void* priv) {
-  Environment* env = Environment::GetCurrent(context);
-  env->SetMethod(target, "parse", Parse);
-  env->SetMethodNoSideEffect(target, "encodeAuth", EncodeAuthSet);
-  env->SetMethodNoSideEffect(target, "domainToASCII", DomainToASCII);
-  env->SetMethodNoSideEffect(target, "domainToUnicode", DomainToUnicode);
-  env->SetMethod(target, "setURLConstructor", SetURLConstructor);
+  SetMethod(context, target, "parse", Parse);
+  SetMethodNoSideEffect(context, target, "encodeAuth", EncodeAuthSet);
+  SetMethodNoSideEffect(context, target, "domainToASCII", DomainToASCII);
+  SetMethodNoSideEffect(context, target, "domainToUnicode", DomainToUnicode);
+  SetMethod(context, target, "setURLConstructor", SetURLConstructor);
 
 #define XX(name, _) NODE_DEFINE_CONSTANT(target, name);
   FLAGS(XX)
@@ -1944,5 +1943,5 @@ MaybeLocal<Value> URL::ToObject(Environment* env) const {
 }  // namespace url
 }  // namespace node
 
-NODE_MODULE_CONTEXT_AWARE_INTERNAL(url, node::url::Initialize)
-NODE_MODULE_EXTERNAL_REFERENCE(url, node::url::RegisterExternalReferences)
+NODE_BINDING_CONTEXT_AWARE_INTERNAL(url, node::url::Initialize)
+NODE_BINDING_EXTERNAL_REFERENCE(url, node::url::RegisterExternalReferences)

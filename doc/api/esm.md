@@ -8,7 +8,8 @@
 added: v8.5.0
 changes:
   - version:
-    - REPLACEME
+    - v18.6.0
+    - v16.17.0
     pr-url: https://github.com/nodejs/node/pull/42623
     description: Add support for chaining loaders.
   - version:
@@ -681,7 +682,8 @@ of Node.js applications.
 added: v8.8.0
 changes:
   - version:
-    - REPLACEME
+    - v18.6.0
+    - v16.17.0
     pr-url: https://github.com/nodejs/node/pull/42623
     description: Add support for chaining loaders.
   - version: v16.12.0
@@ -731,7 +733,9 @@ prevent unintentional breaks in the chain.
 
 <!-- YAML
 changes:
-  - version: REPLACEME
+  - version:
+    - v18.6.0
+    - v16.17.0
     pr-url: https://github.com/nodejs/node/pull/42623
     description: Add support for chaining resolve hooks. Each hook must either
       call `nextResolve()` or include a `shortCircuit` property set to `true`
@@ -823,7 +827,9 @@ export async function resolve(specifier, context, nextResolve) {
 
 <!-- YAML
 changes:
-  - version: REPLACEME
+  - version:
+    - v18.6.0
+    - v16.17.0
     pr-url: https://github.com/nodejs/node/pull/42623
     description: Add support for chaining load hooks. Each hook must either
       call `nextLoad()` or include a `shortCircuit` property set to `true` in
@@ -921,7 +927,9 @@ source to a supported one (see [Examples](#examples) below).
 
 <!-- YAML
 changes:
-  - version: REPLACEME
+  - version:
+    - v18.6.0
+    - v16.17.0
     pr-url: https://github.com/nodejs/node/pull/42623
     description: Add support for chaining globalPreload hooks.
 -->
@@ -1016,7 +1024,7 @@ export function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('https://')) {
     return {
       shortCircuit: true,
-      url: specifier
+      url: specifier,
     };
   } else if (parentURL && parentURL.startsWith('https://')) {
     return {
@@ -1097,7 +1105,7 @@ export async function resolve(specifier, context, nextResolve) {
     // specifiers ending in the CoffeeScript file extensions.
     return {
       shortCircuit: true,
-      url: new URL(specifier, parentURL).href
+      url: new URL(specifier, parentURL).href,
     };
   }
 
@@ -1349,8 +1357,7 @@ The resolver can throw the following errors:
 >       1. Set _mainExport_ to _exports_\[_"."_].
 >    4. If _mainExport_ is not **undefined**, then
 >       1. Let _resolved_ be the result of **PACKAGE\_TARGET\_RESOLVE**(
->          _packageURL_, _mainExport_, _""_, **false**, **false**,
->          _conditions_).
+>          _packageURL_, _mainExport_, **null**, **false**, _conditions_).
 >       2. If _resolved_ is not **null** or **undefined**, return _resolved_.
 > 3. Otherwise, if _exports_ is an Object and all keys of _exports_ start with
 >    _"."_, then
@@ -1381,7 +1388,7 @@ _isImports_, _conditions_)
 > 1. If _matchKey_ is a key of _matchObj_ and does not contain _"\*"_, then
 >    1. Let _target_ be the value of _matchObj_\[_matchKey_].
 >    2. Return the result of **PACKAGE\_TARGET\_RESOLVE**(_packageURL_,
->       _target_, _""_, **false**, _isImports_, _conditions_).
+>       _target_, **null**, _isImports_, _conditions_).
 > 2. Let _expansionKeys_ be the list of keys of _matchObj_ containing only a
 >    single _"\*"_, sorted by the sorting function **PATTERN\_KEY\_COMPARE**
 >    which orders in descending order of specificity.
@@ -1395,11 +1402,11 @@ _isImports_, _conditions_)
 >          _patternTrailer_ and the length of _matchKey_ is greater than or
 >          equal to the length of _expansionKey_, then
 >          1. Let _target_ be the value of _matchObj_\[_expansionKey_].
->          2. Let _subpath_ be the substring of _matchKey_ starting at the
+>          2. Let _patternMatch_ be the substring of _matchKey_ starting at the
 >             index of the length of _patternBase_ up to the length of
 >             _matchKey_ minus the length of _patternTrailer_.
 >          3. Return the result of **PACKAGE\_TARGET\_RESOLVE**(_packageURL_,
->             _target_, _subpath_, **true**, _isImports_, _conditions_).
+>             _target_, _patternMatch_, _isImports_, _conditions_).
 > 4. Return **null**.
 
 **PATTERN\_KEY\_COMPARE**(_keyA_, _keyB_)
@@ -1418,37 +1425,32 @@ _isImports_, _conditions_)
 > 10. If the length of _keyB_ is greater than the length of _keyA_, return 1.
 > 11. Return 0.
 
-**PACKAGE\_TARGET\_RESOLVE**(_packageURL_, _target_, _subpath_, _pattern_,
-_internal_, _conditions_)
+**PACKAGE\_TARGET\_RESOLVE**(_packageURL_, _target_, _patternMatch_,
+_isImports_, _conditions_)
 
 > 1. If _target_ is a String, then
->    1. If _pattern_ is **false**, _subpath_ has non-zero length and _target_
->       does not end with _"/"_, throw an _Invalid Module Specifier_ error.
->    2. If _target_ does not start with _"./"_, then
->       1. If _internal_ is **true** and _target_ does not start with _"../"_ or
->          _"/"_ and is not a valid URL, then
->          1. If _pattern_ is **true**, then
->             1. Return **PACKAGE\_RESOLVE**(_target_ with every instance of
->                _"\*"_ replaced by _subpath_, _packageURL_ + _"/"_).
->          2. Return **PACKAGE\_RESOLVE**(_target_ + _subpath_,
->             _packageURL_ + _"/"_).
->       2. Otherwise, throw an _Invalid Package Target_ error.
->    3. If _target_ split on _"/"_ or _"\\"_ contains any _"."_, _".."_, or
->       _"node\_modules"_ segments after the first segment, case insensitive and
->       including percent encoded variants, throw an _Invalid Package Target_
->       error.
->    4. Let _resolvedTarget_ be the URL resolution of the concatenation of
+>    1. If _target_ does not start with _"./"_, then
+>       1. If _isImports_ is **false**, or if _target_ starts with _"../"_ or
+>          _"/"_, or if _target_ is a valid URL, then
+>          1. Throw an _Invalid Package Target_ error.
+>       2. If _patternMatch_ is a String, then
+>          1. Return **PACKAGE\_RESOLVE**(_target_ with every instance of _"\*"_
+>             replaced by _patternMatch_, _packageURL_ + _"/"_).
+>       3. Return **PACKAGE\_RESOLVE**(_target_, _packageURL_ + _"/"_).
+>    2. If _target_ split on _"/"_ or _"\\"_ contains any _""_, _"."_, _".."_,
+>       or _"node\_modules"_ segments after the first _"."_ segment, case
+>       insensitive and including percent encoded variants, throw an _Invalid
+>       Package Target_ error.
+>    3. Let _resolvedTarget_ be the URL resolution of the concatenation of
 >       _packageURL_ and _target_.
->    5. Assert: _resolvedTarget_ is contained in _packageURL_.
->    6. If _subpath_ split on _"/"_ or _"\\"_ contains any _"."_, _".."_, or
->       _"node\_modules"_ segments, case insensitive and including percent
->       encoded variants, throw an _Invalid Module Specifier_ error.
->    7. If _pattern_ is **true**, then
->       1. Return the URL resolution of _resolvedTarget_ with every instance of
->          _"\*"_ replaced with _subpath_.
->    8. Otherwise,
->       1. Return the URL resolution of the concatenation of _subpath_ and
->          _resolvedTarget_.
+>    4. Assert: _resolvedTarget_ is contained in _packageURL_.
+>    5. If _patternMatch_ is **null**, then
+>       1. Return _resolvedTarget_.
+>    6. If _patternMatch_ split on _"/"_ or _"\\"_ contains any _""_, _"."_,
+>       _".."_, or _"node\_modules"_ segments, case insensitive and including
+>       percent encoded variants, throw an _Invalid Module Specifier_ error.
+>    7. Return the URL resolution of _resolvedTarget_ with every instance of
+>       _"\*"_ replaced with _patternMatch_.
 > 2. Otherwise, if _target_ is a non-null Object, then
 >    1. If _exports_ contains any index property keys, as defined in ECMA-262
 >       [6.1.7 Array Index][], throw an _Invalid Package Configuration_ error.
@@ -1457,7 +1459,7 @@ _internal_, _conditions_)
 >          then
 >          1. Let _targetValue_ be the value of the _p_ property in _target_.
 >          2. Let _resolved_ be the result of **PACKAGE\_TARGET\_RESOLVE**(
->             _packageURL_, _targetValue_, _subpath_, _pattern_, _internal_,
+>             _packageURL_, _targetValue_, _patternMatch_, _isImports_,
 >             _conditions_).
 >          3. If _resolved_ is equal to **undefined**, continue the loop.
 >          4. Return _resolved_.
@@ -1466,7 +1468,7 @@ _internal_, _conditions_)
 >    1. If \_target.length is zero, return **null**.
 >    2. For each item _targetValue_ in _target_, do
 >       1. Let _resolved_ be the result of **PACKAGE\_TARGET\_RESOLVE**(
->          _packageURL_, _targetValue_, _subpath_, _pattern_, _internal_,
+>          _packageURL_, _targetValue_, _patternMatch_, _isImports_,
 >          _conditions_), continuing the loop on any _Invalid Package Target_
 >          error.
 >       2. If _resolved_ is **undefined**, continue the loop.
@@ -1516,31 +1518,9 @@ _internal_, _conditions_)
 
 ### Customizing ESM specifier resolution algorithm
 
-> Stability: 1 - Experimental
-
-> Do not rely on this flag. We plan to remove it once the
-> [Loaders API][] has advanced to the point that equivalent functionality can
-> be achieved via custom loaders.
-
-The current specifier resolution does not support all default behavior of
-the CommonJS loader. One of the behavior differences is automatic resolution
-of file extensions and the ability to import directories that have an index
-file.
-
-The `--experimental-specifier-resolution=[mode]` flag can be used to customize
-the extension resolution algorithm. The default mode is `explicit`, which
-requires the full path to a module be provided to the loader. To enable the
-automatic extension resolution and importing from directories that include an
-index file use the `node` mode.
-
-```console
-$ node index.mjs
-success!
-$ node index # Failure!
-Error: Cannot find module
-$ node --experimental-specifier-resolution=node index
-success!
-```
+The [Loaders API][] provides a mechanism for customizing the ESM specifier
+resolution algorithm. An example loader that provides CommonJS-style resolution
+for ESM specifiers is [commonjs-extension-resolution-loader][].
 
 <!-- Note: The cjs-module-lexer link should be kept in-sync with the deps version -->
 
@@ -1581,6 +1561,7 @@ success!
 [`string`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String
 [`util.TextDecoder`]: util.md#class-utiltextdecoder
 [cjs-module-lexer]: https://github.com/nodejs/cjs-module-lexer/tree/1.2.2
+[commonjs-extension-resolution-loader]: https://github.com/nodejs/loaders-test/tree/main/commonjs-extension-resolution-loader
 [custom https loader]: #https-loader
 [load hook]: #loadurl-context-nextload
 [percent-encoded]: url.md#percent-encoding-in-urls

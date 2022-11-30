@@ -126,7 +126,7 @@ There is the ECMAScript module loader:
 * It accepts only `.js`, `.mjs`, and `.cjs` extensions for JavaScript text
   files.
 * It can be used to load JavaScript CommonJS modules. Such modules
-  are passed through the `es-module-lexer` to try to identify named exports,
+  are passed through the `cjs-module-lexer` to try to identify named exports,
   which are available if they can be determined through static analysis.
   Imported CommonJS modules have their URLs converted to absolute
   paths and are then loaded via the CommonJS module loader.
@@ -257,7 +257,7 @@ likely be a breaking change.**
 To make the introduction of [`"exports"`][] non-breaking, ensure that every
 previously supported entry point is exported. It is best to explicitly specify
 entry points so that the package's public API is well-defined. For example,
-a project that previous exported `main`, `lib`,
+a project that previously exported `main`, `lib`,
 `feature`, and the `package.json` could use the following `package.exports`:
 
 ```json
@@ -706,6 +706,9 @@ is provided below to assist with ecosystem coordination.
   the given export. _This condition should always be included first._
 * `"deno"` - indicates a variation for the Deno platform.
 * `"browser"` - any web browser environment.
+* `"react-native"` - will be matched by the React Native framework (all
+  platforms). _To target React Native for Web, `"browser"` should be specified
+  before this condition._
 * `"development"` - can be used to define a development-only environment
   entry point, for example to provide additional debugging context such as
   better error messages when running in a development mode. _Must always be
@@ -1033,7 +1036,7 @@ CommonJS and ES module instances of the package:
    // ./node_modules/pkg/index.mjs
    import state from './state.cjs';
    export {
-     state
+     state,
    };
    ```
 

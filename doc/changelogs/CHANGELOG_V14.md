@@ -9,6 +9,10 @@
 </tr>
 <tr>
 <td valign="top">
+<a href="#14.21.1">14.21.1</a><br/>
+<a href="#14.21.0">14.21.0</a><br/>
+<a href="#14.20.1">14.20.1</a><br/>
+<a href="#14.20.0">14.20.0</a><br/>
 <a href="#14.19.3">14.19.3</a><br/>
 <a href="#14.19.2">14.19.2</a><br/>
 <a href="#14.19.1">14.19.1</a><br/>
@@ -56,6 +60,7 @@
 </table>
 
 * Other Versions
+  * [19.x](CHANGELOG_V19.md)
   * [18.x](CHANGELOG_V18.md)
   * [17.x](CHANGELOG_V17.md)
   * [16.x](CHANGELOG_V16.md)
@@ -74,6 +79,75 @@
   * [0.10.x](CHANGELOG_V010.md)
   * [io.js](CHANGELOG_IOJS.md)
   * [Archive](CHANGELOG_ARCHIVE.md)
+
+<a id="14.21.1"></a>
+
+## 2022-11-04, Version 14.21.1 'Fermium' (LTS), @BethGriggs
+
+This is a security release.
+
+### Notable changes
+
+The following CVEs are fixed in this release:
+
+* **[CVE-2022-43548](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-43548)**: DNS rebinding in --inspect via invalid octal IP address (Medium)
+
+More detailed information on each of the vulnerabilities can be found in [November 2022 Security Releases](https://nodejs.org/en/blog/vulnerability/november-2022-security-releases/) blog post.
+
+### Commits
+
+* \[[`2b433af094`](https://github.com/nodejs/node/commit/2b433af094)] - **inspector**: harden IP address validation again (Tobias Nießen) [nodejs-private/node-private#354](https://github.com/nodejs-private/node-private/pull/354)
+
+<a id="14.21.0"></a>
+
+## 2022-11-01, Version 14.21.0 'Fermium' (LTS), @danielleadams
+
+### Notable changes
+
+* **deps**:
+  * update corepack to 0.14.2 (Node.js GitHub Bot) [#44775](https://github.com/nodejs/node/pull/44775)
+* **src**:
+  * add --openssl-shared-config option (Daniel Bevenius) [#43124](https://github.com/nodejs/node/pull/43124)
+
+### Commits
+
+* \[[`773f587912`](https://github.com/nodejs/node/commit/773f587912)] - **deps**: cherry-pick libuv/libuv\@3a7b955 (Ben Noordhuis) [#43950](https://github.com/nodejs/node/pull/43950)
+* \[[`a1dea66956`](https://github.com/nodejs/node/commit/a1dea66956)] - **deps**: cherry-pick libuv/libuv\@abb109f (Ben Noordhuis) [#43950](https://github.com/nodejs/node/pull/43950)
+* \[[`98c49d81f5`](https://github.com/nodejs/node/commit/98c49d81f5)] - **deps**: update corepack to 0.14.2 (Node.js GitHub Bot) [#44775](https://github.com/nodejs/node/pull/44775)
+* \[[`18c43c8518`](https://github.com/nodejs/node/commit/18c43c8518)] - **deps**: update timezone to tz2022e (Richard Lau) [#45094](https://github.com/nodejs/node/pull/45094)
+* \[[`a1f8e4db48`](https://github.com/nodejs/node/commit/a1f8e4db48)] - **deps**: update corepack to 0.14.1 (Node.js GitHub Bot) [#44704](https://github.com/nodejs/node/pull/44704)
+* \[[`e55389ca86`](https://github.com/nodejs/node/commit/e55389ca86)] - **deps**: update corepack to 0.14.0 (Node.js GitHub Bot) [#44509](https://github.com/nodejs/node/pull/44509)
+* \[[`0227462418`](https://github.com/nodejs/node/commit/0227462418)] - **deps**: update corepack to 0.13.0 (Node.js GitHub Bot) [#44318](https://github.com/nodejs/node/pull/44318)
+* \[[`ee24c320ea`](https://github.com/nodejs/node/commit/ee24c320ea)] - **deps**: update corepack to 0.12.3 (Node.js GitHub Bot) [#44229](https://github.com/nodejs/node/pull/44229)
+* \[[`28e9891449`](https://github.com/nodejs/node/commit/28e9891449)] - **deps**: update corepack to 0.12.2 (Node.js GitHub Bot) [#44159](https://github.com/nodejs/node/pull/44159)
+* \[[`b6972c9df2`](https://github.com/nodejs/node/commit/b6972c9df2)] - **deps**: update corepack to 0.12.1 (Node.js GitHub Bot) [#43965](https://github.com/nodejs/node/pull/43965)
+* \[[`9d6cb3b5f1`](https://github.com/nodejs/node/commit/9d6cb3b5f1)] - **deps**: update corepack to 0.12.0 (Node.js GitHub Bot) [#43748](https://github.com/nodejs/node/pull/43748)
+* \[[`fa6c276b4f`](https://github.com/nodejs/node/commit/fa6c276b4f)] - **deps**: update Corepack to 0.11.2 (Maël Nison) [#43402](https://github.com/nodejs/node/pull/43402)
+* \[[`4f83d75626`](https://github.com/nodejs/node/commit/4f83d75626)] - **(SEMVER-MAJOR)** **src,doc,test**: add --openssl-shared-config option (Daniel Bevenius) [#43124](https://github.com/nodejs/node/pull/43124)
+* \[[`9487028043`](https://github.com/nodejs/node/commit/9487028043)] - **test**: fix intl tests on small-icu builds (Antoine du Hamel) [#41939](https://github.com/nodejs/node/pull/41939)
+* \[[`a1d52097f8`](https://github.com/nodejs/node/commit/a1d52097f8)] - **tools**: add more options to track flaky tests (Antoine du Hamel) [#43954](https://github.com/nodejs/node/pull/43954)
+
+<a id="14.20.1"></a>
+
+## 2022-09-23, Version 14.20.1 'Fermium' (LTS), @bengl
+
+This is a security release.
+
+### Notable changes
+
+The following CVEs are fixed in this release:
+
+* **[CVE-2022-32212](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-32212)**: DNS rebinding in --inspect on macOS (High)
+* **[CVE-2022-32213](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-32213)**: bypass via obs-fold mechanic (Medium)
+* **[CVE-2022-35256](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-35256)**: HTTP Request Smuggling Due to Incorrect Parsing of Header Fields (Medium)
+
+More detailed information on each of the vulnerabilities can be found in [September 22nd 2022 Security Releases](https://nodejs.org/en/blog/vulnerability/september-2022-security-releases/) blog post.
+
+### Commits
+
+* \[[`a9f1146b88`](https://github.com/nodejs/node/commit/a9f1146b88)] - **http**: disable chunked encoding when OBS fold is used (Paolo Insogna) [nodejs-private/node-private#341](https://github.com/nodejs-private/node-private/pull/341)
+* \[[`a1121b456c`](https://github.com/nodejs/node/commit/a1121b456c)] - **src**: fix IPv4 non routable validation (RafaelGSS) [nodejs-private/node-private#337](https://github.com/nodejs-private/node-private/pull/337)
+* \[[`de80707870`](https://github.com/nodejs/node/commit/de80707870)] - **src**: fix IS\_LTS and IS\_RELEASE flags (Richard Lau) [#43761](https://github.com/nodejs/node/pull/43761)
 
 <a id="14.20.0"></a>
 
@@ -3946,7 +4020,7 @@ const { Console } = require('console');
 const customConsole = new Console({
   stdout: process.stdout,
   stderr: process.stderr,
-  groupIndentation: 10
+  groupIndentation: 10,
 });
 
 customConsole.log('foo');

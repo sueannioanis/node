@@ -24,7 +24,7 @@
 const process = global.process;  // Some tests tamper with the process global.
 
 const assert = require('assert');
-const { exec, execSync, spawnSync } = require('child_process');
+const { exec, execSync, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 // Do not require 'os' until needed so that test-os-checked-function can
 // monkey patch it. If 'os' is required here, that test will fail.
@@ -39,7 +39,7 @@ const hasIntl = !!process.config.variables.v8_enable_i18n_support;
 
 const {
   atob,
-  btoa
+  btoa,
 } = require('buffer');
 
 // Some tests assume a umask of 0o022 so set that up front. Tests that need a
@@ -98,7 +98,7 @@ if (process.argv.length === 2 &&
         console.log(
           'NOTE: The test started as a child_process using these flags:',
           inspect(flags),
-          'Use NODE_SKIP_FLAG_CHECK to run the test with the original flags.'
+          'Use NODE_SKIP_FLAG_CHECK to run the test with the original flags.',
         );
         const args = [...flags, ...process.execArgv, ...process.argv.slice(1)];
         const options = { encoding: 'utf8', stdio: 'inherit' };
@@ -126,7 +126,9 @@ const isPi = (() => {
     // the contents of `/sys/firmware/devicetree/base/model` but that doesn't
     // work inside a container. Match the chipset model number instead.
     const cpuinfo = fs.readFileSync('/proc/cpuinfo', { encoding: 'utf8' });
-    return /^Hardware\s*:\s*(.*)$/im.exec(cpuinfo)?.[1] === 'BCM2835';
+    const ok = /^Hardware\s*:\s*(.*)$/im.exec(cpuinfo)?.[1] === 'BCM2835';
+    /^/.test('');  // Clear RegExp.$_, some tests expect it to be empty.
+    return ok;
   } catch {
     return false;
   }
@@ -173,7 +175,7 @@ if (process.env.NODE_TEST_WITH_ASYNC_HOOKS) {
       }
       initHandles[id] = {
         resource,
-        stack: inspect(new Error()).substr(6)
+        stack: inspect(new Error()).substr(6),
       };
     },
     before() { },
@@ -289,6 +291,9 @@ if (global.gc) {
   knownGlobals.push(global.gc);
 }
 
+if (global.Performance) {
+  knownGlobals.push(global.Performance);
+}
 if (global.performance) {
   knownGlobals.push(global.performance);
 }
@@ -314,6 +319,9 @@ if (hasCrypto && global.crypto) {
   knownGlobals.push(global.Crypto);
   knownGlobals.push(global.CryptoKey);
   knownGlobals.push(global.SubtleCrypto);
+}
+if (global.CustomEvent) {
+  knownGlobals.push(global.CustomEvent);
 }
 if (global.ReadableStream) {
   knownGlobals.push(
@@ -351,7 +359,9 @@ if (process.env.NODE_TEST_KNOWN_GLOBALS !== '0') {
     const leaked = [];
 
     for (const val in global) {
-      if (!knownGlobals.includes(global[val])) {
+      // globalThis.crypto is a getter that throws if Node.js was compiled
+      // without OpenSSL.
+      if (val !== 'crypto' && !knownGlobals.includes(global[val])) {
         leaked.push(val);
       }
     }
@@ -425,7 +435,7 @@ function _mustCallInner(fn, criteria = 1, field) {
     [field]: criteria,
     actual: 0,
     stack: inspect(new Error()),
-    name: fn.name || '<anonymous>'
+    name: fn.name || '<anonymous>',
   };
 
   // Add the exit listener only once to avoid listener leak warnings
@@ -468,7 +478,7 @@ function hasMultiLocalhost() {
 
 function skipIfEslintMissing() {
   if (!fs.existsSync(
-    path.join(__dirname, '..', '..', 'tools', 'node_modules', 'eslint')
+    path.join(__dirname, '..', '..', 'tools', 'node_modules', 'eslint'),
   )) {
     skip('missing ESLint');
   }
@@ -517,6 +527,52 @@ function mustNotCall(msg) {
       `${msg || 'function should not have been called'} at ${callSite}` +
       argsInfo);
   };
+}
+
+const _mustNotMutateObjectDeepProxies = new WeakMap();
+
+function mustNotMutateObjectDeep(original) {
+  // Return primitives and functions directly. Primitives are immutable, and
+  // proxied functions are impossible to compare against originals, e.g. with
+  // `assert.deepEqual()`.
+  if (original === null || typeof original !== 'object') {
+    return original;
+  }
+
+  const cachedProxy = _mustNotMutateObjectDeepProxies.get(original);
+  if (cachedProxy) {
+    return cachedProxy;
+  }
+
+  const _mustNotMutateObjectDeepHandler = {
+    __proto__: null,
+    defineProperty(target, property, descriptor) {
+      assert.fail(`Expected no side effects, got ${inspect(property)} ` +
+                  'defined');
+    },
+    deleteProperty(target, property) {
+      assert.fail(`Expected no side effects, got ${inspect(property)} ` +
+                  'deleted');
+    },
+    get(target, prop, receiver) {
+      return mustNotMutateObjectDeep(Reflect.get(target, prop, receiver));
+    },
+    preventExtensions(target) {
+      assert.fail('Expected no side effects, got extensions prevented on ' +
+                  inspect(target));
+    },
+    set(target, property, value, receiver) {
+      assert.fail(`Expected no side effects, got ${inspect(value)} ` +
+                  `assigned to ${inspect(property)}`);
+    },
+    setPrototypeOf(target, prototype) {
+      assert.fail(`Expected no side effects, got set prototype to ${prototype}`);
+    },
+  };
+
+  const proxy = new Proxy(original, _mustNotMutateObjectDeepHandler);
+  _mustNotMutateObjectDeepProxies.set(original, proxy);
+  return proxy;
 }
 
 function printSkipMessage(msg) {
@@ -614,7 +670,7 @@ function expectWarning(nameOrMap, expected, code) {
       if (!catchWarning[warning.name]) {
         throw new TypeError(
           `"${warning.name}" was triggered without being expected.\n` +
-          inspect(warning)
+          inspect(warning),
         );
       }
       catchWarning[warning.name](warning);
@@ -793,6 +849,36 @@ function requireNoPackageJSONAbove(dir = __dirname) {
   }
 }
 
+function spawnPromisified(...args) {
+  let stderr = '';
+  let stdout = '';
+
+  const child = spawn(...args);
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (data) => { stderr += data; });
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (data) => { stdout += data; });
+
+  return new Promise((resolve, reject) => {
+    child.on('close', (code, signal) => {
+      resolve({
+        code,
+        signal,
+        stderr,
+        stdout,
+      });
+    });
+    child.on('error', (code, signal) => {
+      reject({
+        code,
+        signal,
+        stderr,
+        stdout,
+      });
+    });
+  });
+}
+
 const common = {
   allowGlobals,
   buildType,
@@ -827,6 +913,7 @@ const common = {
   mustCall,
   mustCallAtLeast,
   mustNotCall,
+  mustNotMutateObjectDeep,
   mustSucceed,
   nodeProcessAborted,
   PIPE,
@@ -841,6 +928,7 @@ const common = {
   skipIfEslintMissing,
   skipIfInspectorDisabled,
   skipIfWorker,
+  spawnPromisified,
 
   get enoughTestMem() {
     return require('os').totalmem() > 0x70000000; /* 1.75 Gb */
@@ -946,5 +1034,5 @@ module.exports = new Proxy(common, {
     if (!validProperties.has(prop))
       throw new Error(`Using invalid common property: '${prop}'`);
     return obj[prop];
-  }
+  },
 });

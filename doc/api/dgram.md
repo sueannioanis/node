@@ -357,7 +357,7 @@ An example socket listening on an exclusive port is shown below.
 socket.bind({
   address: 'localhost',
   port: 8000,
-  exclusive: true
+  exclusive: true,
 });
 ```
 
@@ -460,6 +460,23 @@ added: v8.7.0
 * Returns: {number} the `SO_SNDBUF` socket send buffer size in bytes.
 
 This method throws [`ERR_SOCKET_BUFFER_SIZE`][] if called on an unbound socket.
+
+### `socket.getSendQueueSize()`
+
+<!-- YAML
+added: v18.8.0
+-->
+
+* Returns: {number} Number of bytes queued for sending.
+
+### `socket.getSendQueueCount()`
+
+<!-- YAML
+added: v18.8.0
+-->
+
+* Returns: {number} Number of send requests currently in the queue awaiting
+  to be processed.
 
 ### `socket.ref()`
 

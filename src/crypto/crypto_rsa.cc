@@ -153,7 +153,7 @@ Maybe<bool> RsaKeyGenTraits::AdditionalConfig(
       Utf8Value digest(env->isolate(), args[*offset]);
       params->params.md = EVP_get_digestbyname(*digest);
       if (params->params.md == nullptr) {
-        THROW_ERR_CRYPTO_INVALID_DIGEST(env, "md specifies an invalid digest");
+        THROW_ERR_CRYPTO_INVALID_DIGEST(env, "Invalid digest: %s", *digest);
         return Nothing<bool>();
       }
     }
@@ -163,8 +163,8 @@ Maybe<bool> RsaKeyGenTraits::AdditionalConfig(
       Utf8Value digest(env->isolate(), args[*offset + 1]);
       params->params.mgf1_md = EVP_get_digestbyname(*digest);
       if (params->params.mgf1_md == nullptr) {
-        THROW_ERR_CRYPTO_INVALID_DIGEST(env,
-          "mgf1_md specifies an invalid digest");
+        THROW_ERR_CRYPTO_INVALID_DIGEST(
+            env, "Invalid MGF1 digest: %s", *digest);
         return Nothing<bool>();
       }
     }
@@ -221,18 +221,7 @@ WebCryptoCipherStatus RSA_Cipher(
     return WebCryptoCipherStatus::FAILED;
   }
 
-  size_t label_len = params.label.size();
-  if (label_len > 0) {
-    void* label = OPENSSL_memdup(params.label.data<char>(), label_len);
-    CHECK_NOT_NULL(label);
-    if (EVP_PKEY_CTX_set0_rsa_oaep_label(
-      ctx.get(),
-      static_cast<unsigned char*>(label),
-      label_len) <= 0) {
-      OPENSSL_free(label);
-      return WebCryptoCipherStatus::FAILED;
-    }
-  }
+  if (!SetRsaOaepLabel(ctx, params.label)) return WebCryptoCipherStatus::FAILED;
 
   size_t out_len = 0;
   if (cipher(
@@ -328,7 +317,7 @@ Maybe<bool> RSACipherTraits::AdditionalConfig(
 
       params->digest = EVP_get_digestbyname(*digest);
       if (params->digest == nullptr) {
-        THROW_ERR_CRYPTO_INVALID_DIGEST(env);
+        THROW_ERR_CRYPTO_INVALID_DIGEST(env, "Invalid digest: %s", *digest);
         return Nothing<bool>();
       }
 

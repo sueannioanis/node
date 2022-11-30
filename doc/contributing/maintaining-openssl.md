@@ -7,15 +7,12 @@ currently need to generate four PRs as follows:
 
 * a PR for `main` which is generated following the instructions
   below for OpenSSL 3.x.x.
+* a PR for 18.x following the instructions in the v18.x-staging version
+  of this guide.
 * a PR for 16.x following the instructions in the v16.x-staging version
   of this guide.
-* a PR for 14.x following the instructions in the v14.x-staging version
+* a PR for 14.x following the instructions in the [v14.x-staging version][]
   of this guide.
-* a PR which uses the same commit from the third PR to apply the
-  updates to the openssl source code, with a new commit generated
-  by following steps 2 onwards on the 12.x line. This is
-  necessary because the configuration files have embedded timestamps
-  which lead to merge conflicts if cherry-picked from the second PR.
 
 ## Use of the quictls/openssl fork
 
@@ -98,7 +95,18 @@ Use `make` to regenerate all platform dependent files in
 % make gen-openssl
 
 # On Linux machines
+% make -C deps/openssl/config clean
 % make -C deps/openssl/config
+```
+
+**Note**: If the 32-bit Windows is failing to compile run this workflow instead:
+
+```console
+% make -C deps/openssl/config clean
+# Edit deps/openssl/openssl/crypto/perlasm/x86asm.pl changing
+# #ifdef to %ifdef to make it compatible to nasm on 32-bit Windows.
+# See: https://github.com/nodejs/node/pull/43603#issuecomment-1170670844
+# Reference: https://github.com/openssl/openssl/issues/18459
 ```
 
 ## 3. Check diffs
@@ -146,3 +154,5 @@ regenerated and committed by:
 ```
 
 Finally, build Node.js and run the tests.
+
+[v14.x-staging version]: https://github.com/nodejs/node/blob/v14.x-staging/doc/guides/maintaining-openssl.md

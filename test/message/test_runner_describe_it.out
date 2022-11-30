@@ -24,6 +24,7 @@ not ok 3 - sync fail todo # TODO
     *
     *
     *
+    *
   ...
 # Subtest: sync fail todo with message
 not ok 4 - sync fail todo with message # TODO this is a failing todo
@@ -33,8 +34,6 @@ not ok 4 - sync fail todo with message # TODO this is a failing todo
   error: 'thrown from sync fail todo with message'
   code: 'ERR_TEST_FAILURE'
   stack: |-
-    *
-    *
     *
     *
     *
@@ -74,6 +73,7 @@ not ok 8 - sync throw fail
     *
     *
     *
+    *
   ...
 # Subtest: async skip pass
 ok 9 - async skip pass # SKIP
@@ -100,19 +100,32 @@ not ok 11 - async throw fail
     *
     *
     *
+    *
+  ...
+# Subtest: async skip fail
+not ok 12 - async skip fail
+  ---
+  duration_ms: *
+  failureType: 'callbackAndPromisePresent'
+  error: 'passed a callback but also returned a Promise'
+  code: 'ERR_TEST_FAILURE'
   ...
 # Subtest: async assertion fail
-not ok 12 - async assertion fail
+not ok 13 - async assertion fail
   ---
   duration_ms: *
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
-
+    
     true !== false
-
+    
   code: 'ERR_ASSERTION'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
   stack: |-
+    *
     *
     *
     *
@@ -122,12 +135,12 @@ not ok 12 - async assertion fail
     *
   ...
 # Subtest: resolve pass
-ok 13 - resolve pass
+ok 14 - resolve pass
   ---
   duration_ms: *
   ...
 # Subtest: reject fail
-not ok 14 - reject fail
+not ok 15 - reject fail
   ---
   duration_ms: *
   failureType: 'testCodeFailure'
@@ -141,29 +154,30 @@ not ok 14 - reject fail
     *
     *
     *
+    *
   ...
 # Subtest: unhandled rejection - passes but warns
-ok 15 - unhandled rejection - passes but warns
+ok 16 - unhandled rejection - passes but warns
   ---
   duration_ms: *
   ...
 # Subtest: async unhandled rejection - passes but warns
-ok 16 - async unhandled rejection - passes but warns
+ok 17 - async unhandled rejection - passes but warns
   ---
   duration_ms: *
   ...
 # Subtest: immediate throw - passes but warns
-ok 17 - immediate throw - passes but warns
+ok 18 - immediate throw - passes but warns
   ---
   duration_ms: *
   ...
 # Subtest: immediate reject - passes but warns
-ok 18 - immediate reject - passes but warns
+ok 19 - immediate reject - passes but warns
   ---
   duration_ms: *
   ...
 # Subtest: immediate resolve pass
-ok 19 - immediate resolve pass
+ok 20 - immediate resolve pass
   ---
   duration_ms: *
   ...
@@ -182,9 +196,13 @@ ok 19 - immediate resolve pass
         *
         *
         *
+        *
+        *
+        *
+        *
       ...
     1..1
-not ok 20 - subtest sync throw fail
+not ok 21 - subtest sync throw fail
   ---
   duration_ms: *
   failureType: 'subtestsFailed'
@@ -192,7 +210,7 @@ not ok 20 - subtest sync throw fail
   code: 'ERR_TEST_FAILURE'
   ...
 # Subtest: sync throw non-error fail
-not ok 21 - sync throw non-error fail
+not ok 22 - sync throw non-error fail
   ---
   duration_ms: *
   failureType: 'testCodeFailure'
@@ -221,29 +239,7 @@ not ok 21 - sync throw non-error fail
       duration_ms: *
       ...
     1..4
-ok 22 - level 0a
-  ---
-  duration_ms: *
-  ...
-# Subtest: top level
-    # Subtest: +long running
-    ok 1 - +long running
-      ---
-      duration_ms: *
-      ...
-    # Subtest: +short running
-        # Subtest: ++short running
-        ok 1 - ++short running
-          ---
-          duration_ms: *
-          ...
-        1..1
-    ok 2 - +short running
-      ---
-      duration_ms: *
-      ...
-    1..2
-ok 23 - top level
+ok 23 - level 0a
   ---
   duration_ms: *
   ...
@@ -423,6 +419,7 @@ not ok 49 - callback async throw
   code: 'ERR_TEST_FAILURE'
   stack: |-
     *
+    *
   ...
 # Subtest: callback async throw after done
 ok 50 - callback async throw after done
@@ -465,6 +462,9 @@ not ok 52 - custom inspect symbol that throws fail
         *
         *
         *
+        *
+        *
+        *
       ...
     # Subtest: sync throw fails at second
     not ok 2 - sync throw fails at second
@@ -480,6 +480,10 @@ not ok 52 - custom inspect symbol that throws fail
         *
         *
         *
+        *
+        *
+        *
+        *
       ...
     1..2
 not ok 53 - subtest sync throw fails
@@ -489,8 +493,137 @@ not ok 53 - subtest sync throw fails
   error: '2 subtests failed'
   code: 'ERR_TEST_FAILURE'
   ...
+# Subtest: describe sync throw fails
+    # Subtest: should not run
+    not ok 1 - should not run
+      ---
+      duration_ms: *
+      failureType: 'cancelledByParent'
+      error: 'test did not finish before its parent and was cancelled'
+      code: 'ERR_TEST_FAILURE'
+      ...
+    1..1
+not ok 54 - describe sync throw fails
+  ---
+  duration_ms: *
+  failureType: 'testCodeFailure'
+  error: 'thrown from describe'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    *
+    *
+    *
+    *
+    *
+    *
+    *
+    *
+    *
+    *
+  ...
+# Subtest: describe async throw fails
+    # Subtest: should not run
+    not ok 1 - should not run
+      ---
+      duration_ms: *
+      failureType: 'cancelledByParent'
+      error: 'test did not finish before its parent and was cancelled'
+      code: 'ERR_TEST_FAILURE'
+      ...
+    1..1
+not ok 55 - describe async throw fails
+  ---
+  duration_ms: *
+  failureType: 'testCodeFailure'
+  error: 'thrown from describe'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    *
+    *
+    *
+    *
+    *
+    *
+    *
+    *
+    *
+    *
+  ...
+# Subtest: timeouts
+    # Subtest: timed out async test
+    not ok 1 - timed out async test
+      ---
+      duration_ms: *
+      failureType: 'testTimeoutFailure'
+      error: 'test timed out after 5ms'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        async Promise.all (index 0)
+      ...
+    # Subtest: timed out callback test
+    not ok 2 - timed out callback test
+      ---
+      duration_ms: *
+      failureType: 'testTimeoutFailure'
+      error: 'test timed out after 5ms'
+      code: 'ERR_TEST_FAILURE'
+      ...
+    # Subtest: large timeout async test is ok
+    ok 3 - large timeout async test is ok
+      ---
+      duration_ms: *
+      ...
+    # Subtest: large timeout callback test is ok
+    ok 4 - large timeout callback test is ok
+      ---
+      duration_ms: *
+      ...
+    1..4
+not ok 56 - timeouts
+  ---
+  duration_ms: *
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: successful thenable
+    # Subtest: successful thenable
+    ok 1 - successful thenable
+      ---
+      duration_ms: *
+      ...
+    # Subtest: rejected thenable
+    not ok 2 - rejected thenable
+      ---
+      duration_ms: *
+      failureType: 'testCodeFailure'
+      error: 'custom error'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        *
+        *
+      ...
+    1..2
+not ok 57 - successful thenable
+  ---
+  duration_ms: *
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: rejected thenable
+not ok 58 - rejected thenable
+  ---
+  duration_ms: *
+  failureType: 'testCodeFailure'
+  error: 'custom error'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    *
+    *
+  ...
 # Subtest: invalid subtest fail
-not ok 54 - invalid subtest fail
+not ok 59 - invalid subtest fail
   ---
   duration_ms: *
   failureType: 'parentAlreadyFinished'
@@ -499,16 +632,16 @@ not ok 54 - invalid subtest fail
   stack: |-
     *
   ...
-1..54
+1..59
 # Warning: Test "unhandled rejection - passes but warns" generated asynchronous activity after the test ended. This activity created the error "Error: rejected from unhandled rejection fail" and would have caused the test to fail, but instead triggered an unhandledRejection event.
 # Warning: Test "async unhandled rejection - passes but warns" generated asynchronous activity after the test ended. This activity created the error "Error: rejected from async unhandled rejection fail" and would have caused the test to fail, but instead triggered an unhandledRejection event.
 # Warning: Test "immediate throw - passes but warns" generated asynchronous activity after the test ended. This activity created the error "Error: thrown from immediate throw fail" and would have caused the test to fail, but instead triggered an uncaughtException event.
 # Warning: Test "immediate reject - passes but warns" generated asynchronous activity after the test ended. This activity created the error "Error: rejected from immediate reject fail" and would have caused the test to fail, but instead triggered an unhandledRejection event.
 # Warning: Test "callback called twice in different ticks" generated asynchronous activity after the test ended. This activity created the error "Error [ERR_TEST_FAILURE]: callback invoked multiple times" and would have caused the test to fail, but instead triggered an uncaughtException event.
 # Warning: Test "callback async throw after done" generated asynchronous activity after the test ended. This activity created the error "Error: thrown from callback async throw after done" and would have caused the test to fail, but instead triggered an uncaughtException event.
-# tests 54
-# pass 23
-# fail 17
+# tests 59
+# pass 22
+# fail 23
 # cancelled 0
 # skipped 9
 # todo 5

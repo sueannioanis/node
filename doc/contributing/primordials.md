@@ -363,10 +363,52 @@ Object.defineProperty(Object.prototype, Symbol.isConcatSpreadable, {
 // 1. Lookup @@iterator property on `array` (user-mutable if user-provided).
 // 2. Lookup @@iterator property on %Array.prototype% (user-mutable).
 // 3. Lookup `next` property on %ArrayIteratorPrototype% (user-mutable).
-PromiseAll(array); // unsafe
+// 4. Lookup `then` property on %Array.Prototype% (user-mutable).
+// 5. Lookup `then` property on %Object.Prototype% (user-mutable).
+PromiseAll([]); // unsafe
 
-PromiseAll(new SafeArrayIterator(array));
-SafePromiseAll(array); // safe
+// 1. Lookup `then` property on %Array.Prototype% (user-mutable).
+// 2. Lookup `then` property on %Object.Prototype% (user-mutable).
+PromiseAll(new SafeArrayIterator([])); // still unsafe
+SafePromiseAll([]); // still unsafe
+
+SafePromiseAllReturnVoid([]); // safe
+SafePromiseAllReturnArrayLike([]); // safe
+
+const array = [promise];
+const set = new SafeSet().add(promise);
+// When running one of these functions on a non-empty iterable, it will also:
+// 1. Lookup `then` property on `promise` (user-mutable if user-provided).
+// 2. Lookup `then` property on `%Promise.prototype%` (user-mutable).
+// 3. Lookup `then` property on %Array.Prototype% (user-mutable).
+// 4. Lookup `then` property on %Object.Prototype% (user-mutable).
+PromiseAll(new SafeArrayIterator(array)); // unsafe
+PromiseAll(set); // unsafe
+
+SafePromiseAllReturnVoid(array); // safe
+SafePromiseAllReturnArrayLike(array); // safe
+
+// Some key differences between `SafePromise[...]` and `Promise[...]` methods:
+
+// 1. SafePromiseAll, SafePromiseAllSettled, SafePromiseAny, SafePromiseRace,
+//    SafePromiseAllReturnArrayLike, SafePromiseAllReturnVoid, and
+//    SafePromiseAllSettledReturnVoid support passing a mapperFunction as second
+//    argument.
+SafePromiseAll(ArrayPrototypeMap(array, someFunction));
+SafePromiseAll(array, someFunction); // Same as the above, but more efficient.
+
+// 2. SafePromiseAll, SafePromiseAllSettled, SafePromiseAny, SafePromiseRace,
+//    SafePromiseAllReturnArrayLike, SafePromiseAllReturnVoid, and
+//    SafePromiseAllSettledReturnVoid only support arrays and array-like
+//    objects, not iterables. Use ArrayFrom to convert an iterable to an array.
+SafePromiseAllReturnVoid(set); // ignores set content.
+SafePromiseAllReturnVoid(ArrayFrom(set)); // works
+
+// 3. SafePromiseAllReturnArrayLike is safer than SafePromiseAll, however you
+//    should not use them when its return value is passed to the user as it can
+//    be surprising for them not to receive a genuine array.
+SafePromiseAllReturnArrayLike(array).then((val) => val instanceof Array); // false
+SafePromiseAll(array).then((val) => val instanceof Array); // true
 ```
 
 </details>
@@ -459,6 +501,7 @@ original methods:
 * It expects an array (or array-like object) instead of an iterable.
 * It wraps each promise in `SafePromise` objects and wraps the result in a new
   `Promise` instance – which may come with a performance penalty.
+* It accepts a `mapperFunction` as second argument.
 * Because it doesn't look up `then` property, it may not be the right tool to
   handle user-provided promises (which may be instances of a subclass of
   `Promise`).
@@ -473,7 +516,7 @@ Promise.prototype.then = function then(a, b) {
 let thenBlockExecuted = false;
 PromisePrototypeThen(
   PromiseAll(new SafeArrayIterator([PromiseResolve()])),
-  () => { thenBlockExecuted = true; }
+  () => { thenBlockExecuted = true; },
 );
 process.on('exit', () => console.log(thenBlockExecuted)); // false
 ```
@@ -488,9 +531,18 @@ Promise.prototype.then = function then(a, b) {
 let thenBlockExecuted = false;
 PromisePrototypeThen(
   SafePromiseAll([PromiseResolve()]),
-  () => { thenBlockExecuted = true; }
+  () => { thenBlockExecuted = true; },
 );
 process.on('exit', () => console.log(thenBlockExecuted)); // true
+```
+
+A common pattern is to map on the array of `Promise`s to apply some
+transformations, in that case it can be more efficient to pass a second argument
+rather than invoking `%Array.prototype.map%`.
+
+```js
+SafePromiseAll(ArrayPrototypeMap(array, someFunction));
+SafePromiseAll(array, someFunction); // Same as the above, but more efficient.
 ```
 
 </details>
@@ -606,6 +658,9 @@ RegExp.prototype.exec = () => null;
 // Core
 console.log(RegExpPrototypeTest(/o/, 'foo')); // false
 console.log(RegExpPrototypeExec(/o/, 'foo') !== null); // true
+
+console.log(RegExpPrototypeSymbolSearch(/o/, 'foo')); // -1
+console.log(SafeStringPrototypeSearch('foo', /o/)); // 1
 ```
 
 #### Don't trust `RegExp` flags
@@ -635,19 +690,7 @@ Object.defineProperty(RegExp.prototype, 'global', { value: false });
 
 // Core
 console.log(RegExpPrototypeSymbolReplace(/o/g, 'foo', 'a')); // 'fao'
-
-const regex = /o/g;
-ObjectDefineProperties(regex, {
-  dotAll: { value: false },
-  exec: { value: undefined },
-  flags: { value: 'g' },
-  global: { value: true },
-  ignoreCase: { value: false },
-  multiline: { value: false },
-  unicode: { value: false },
-  sticky: { value: false },
-});
-console.log(RegExpPrototypeSymbolReplace(regex, 'foo', 'a')); // 'faa'
+console.log(RegExpPrototypeSymbolReplace(hardenRegExp(/o/g), 'foo', 'a')); // 'faa'
 ```
 
 ### Defining object own properties

@@ -578,3 +578,417 @@ test('strict: when long option and suspect value then throws with whole expected
   }, /To specify an option argument starting with a dash use '--with=-XYZ'/
   );
 });
+
+test('tokens: positional', () => {
+  const args = ['one'];
+  const expectedTokens = [
+    { kind: 'positional', index: 0, value: 'one' },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: -- followed by option-like', () => {
+  const args = ['--', '--foo'];
+  const expectedTokens = [
+    { kind: 'option-terminator', index: 0 },
+    { kind: 'positional', index: 1, value: '--foo' },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:true boolean short', () => {
+  const args = ['-f'];
+  const options = {
+    file: { short: 'f', type: 'boolean' }
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '-f',
+      index: 0, value: undefined, inlineValue: undefined },
+  ];
+  const { tokens } = parseArgs({ strict: true, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:true boolean long', () => {
+  const args = ['--file'];
+  const options = {
+    file: { short: 'f', type: 'boolean' }
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '--file',
+      index: 0, value: undefined, inlineValue: undefined },
+  ];
+  const { tokens } = parseArgs({ strict: true, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false boolean short', () => {
+  const args = ['-f'];
+  const expectedTokens = [
+    { kind: 'option', name: 'f', rawName: '-f',
+      index: 0, value: undefined, inlineValue: undefined },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false boolean long', () => {
+  const args = ['--file'];
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '--file',
+      index: 0, value: undefined, inlineValue: undefined },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false boolean option group', () => {
+  const args = ['-ab'];
+  const expectedTokens = [
+    { kind: 'option', name: 'a', rawName: '-a',
+      index: 0, value: undefined, inlineValue: undefined },
+    { kind: 'option', name: 'b', rawName: '-b',
+      index: 0, value: undefined, inlineValue: undefined },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false boolean option group with repeated option', () => {
+  // Also positional to check index correct after grouop
+  const args = ['-aa', 'pos'];
+  const expectedTokens = [
+    { kind: 'option', name: 'a', rawName: '-a',
+      index: 0, value: undefined, inlineValue: undefined },
+    { kind: 'option', name: 'a', rawName: '-a',
+      index: 0, value: undefined, inlineValue: undefined },
+    { kind: 'positional', index: 1, value: 'pos' },
+  ];
+  const { tokens } = parseArgs({ strict: false, allowPositionals: true, args, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:true string short with value after space', () => {
+  // Also positional to check index correct after out-of-line.
+  const args = ['-f', 'bar', 'ppp'];
+  const options = {
+    file: { short: 'f', type: 'string' }
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '-f',
+      index: 0, value: 'bar', inlineValue: false },
+    { kind: 'positional', index: 2, value: 'ppp' },
+  ];
+  const { tokens } = parseArgs({ strict: true, allowPositionals: true, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:true string short with value inline', () => {
+  const args = ['-fBAR'];
+  const options = {
+    file: { short: 'f', type: 'string' }
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '-f',
+      index: 0, value: 'BAR', inlineValue: true },
+  ];
+  const { tokens } = parseArgs({ strict: true, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false string short missing value', () => {
+  const args = ['-f'];
+  const options = {
+    file: { short: 'f', type: 'string' }
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '-f',
+      index: 0, value: undefined, inlineValue: undefined },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:true string long with value after space', () => {
+  // Also positional to check index correct after out-of-line.
+  const args = ['--file', 'bar', 'ppp'];
+  const options = {
+    file: { short: 'f', type: 'string' }
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '--file',
+      index: 0, value: 'bar', inlineValue: false },
+    { kind: 'positional', index: 2, value: 'ppp' },
+  ];
+  const { tokens } = parseArgs({ strict: true, allowPositionals: true, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:true string long with value inline', () => {
+  // Also positional to check index correct after out-of-line.
+  const args = ['--file=bar', 'pos'];
+  const options = {
+    file: { short: 'f', type: 'string' }
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '--file',
+      index: 0, value: 'bar', inlineValue: true },
+    { kind: 'positional', index: 1, value: 'pos' },
+  ];
+  const { tokens } = parseArgs({ strict: true, allowPositionals: true, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false string long with value inline', () => {
+  const args = ['--file=bar'];
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '--file',
+      index: 0, value: 'bar', inlineValue: true },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false string long missing value', () => {
+  const args = ['--file'];
+  const options = {
+    file: { short: 'f', type: 'string' }
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '--file',
+      index: 0, value: undefined, inlineValue: undefined },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:true complex option group with value after space', () => {
+  // Also positional to check index correct afterwards.
+  const args = ['-ab', 'c', 'pos'];
+  const options = {
+    alpha: { short: 'a', type: 'boolean' },
+    beta: { short: 'b', type: 'string' },
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'alpha', rawName: '-a',
+      index: 0, value: undefined, inlineValue: undefined },
+    { kind: 'option', name: 'beta', rawName: '-b',
+      index: 0, value: 'c', inlineValue: false },
+    { kind: 'positional', index: 2, value: 'pos' },
+  ];
+  const { tokens } = parseArgs({ strict: true, allowPositionals: true, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:true complex option group with inline value', () => {
+  // Also positional to check index correct afterwards.
+  const args = ['-abc', 'pos'];
+  const options = {
+    alpha: { short: 'a', type: 'boolean' },
+    beta: { short: 'b', type: 'string' },
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'alpha', rawName: '-a',
+      index: 0, value: undefined, inlineValue: undefined },
+    { kind: 'option', name: 'beta', rawName: '-b',
+      index: 0, value: 'c', inlineValue: true },
+    { kind: 'positional', index: 1, value: 'pos' },
+  ];
+  const { tokens } = parseArgs({ strict: true, allowPositionals: true, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false with single dashes', () => {
+  const args = ['--file', '-', '-'];
+  const options = {
+    file: { short: 'f', type: 'string' },
+  };
+  const expectedTokens = [
+    { kind: 'option', name: 'file', rawName: '--file',
+      index: 0, value: '-', inlineValue: false },
+    { kind: 'positional', index: 2, value: '-' },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens: strict:false with -- --', () => {
+  const args = ['--', '--'];
+  const expectedTokens = [
+    { kind: 'option-terminator', index: 0 },
+    { kind: 'positional', index: 1, value: '--' },
+  ];
+  const { tokens } = parseArgs({ strict: false, args, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('default must be a boolean when option type is boolean', () => {
+  const args = [];
+  const options = { alpha: { type: 'boolean', default: 'not a boolean' } };
+  assert.throws(() => {
+    parseArgs({ args, options });
+  }, /"options\.alpha\.default" property must be of type boolean/
+  );
+});
+
+test('default must accept undefined value', () => {
+  const args = [];
+  const options = { alpha: { type: 'boolean', default: undefined } };
+  const result = parseArgs({ args, options });
+  const expected = {
+    values: {
+      __proto__: null,
+    },
+    positionals: []
+  };
+  assert.deepStrictEqual(result, expected);
+});
+
+test('default must be a boolean array when option type is boolean and multiple', () => {
+  const args = [];
+  const options = { alpha: { type: 'boolean', multiple: true, default: 'not an array' } };
+  assert.throws(() => {
+    parseArgs({ args, options });
+  }, /"options\.alpha\.default" property must be an instance of Array/
+  );
+});
+
+test('default must be a boolean array when option type is string and multiple is true', () => {
+  const args = [];
+  const options = { alpha: { type: 'boolean', multiple: true, default: [true, true, 42] } };
+  assert.throws(() => {
+    parseArgs({ args, options });
+  }, /"options\.alpha\.default\[2\]" property must be of type boolean/
+  );
+});
+
+test('default must be a string when option type is string', () => {
+  const args = [];
+  const options = { alpha: { type: 'string', default: true } };
+  assert.throws(() => {
+    parseArgs({ args, options });
+  }, /"options\.alpha\.default" property must be of type string/
+  );
+});
+
+test('default must be an array when option type is string and multiple is true', () => {
+  const args = [];
+  const options = { alpha: { type: 'string', multiple: true, default: 'not an array' } };
+  assert.throws(() => {
+    parseArgs({ args, options });
+  }, /"options\.alpha\.default" property must be an instance of Array/
+  );
+});
+
+test('default must be a string array when option type is string and multiple is true', () => {
+  const args = [];
+  const options = { alpha: { type: 'string', multiple: true, default: ['str', 42] } };
+  assert.throws(() => {
+    parseArgs({ args, options });
+  }, /"options\.alpha\.default\[1\]" property must be of type string/
+  );
+});
+
+test('default accepted input when multiple is true', () => {
+  const args = ['--inputStringArr', 'c', '--inputStringArr', 'd', '--inputBoolArr', '--inputBoolArr'];
+  const options = {
+    inputStringArr: { type: 'string', multiple: true, default: ['a', 'b'] },
+    emptyStringArr: { type: 'string', multiple: true, default: [] },
+    fullStringArr: { type: 'string', multiple: true, default: ['a', 'b'] },
+    inputBoolArr: { type: 'boolean', multiple: true, default: [false, true, false] },
+    emptyBoolArr: { type: 'boolean', multiple: true, default: [] },
+    fullBoolArr: { type: 'boolean', multiple: true, default: [false, true, false] },
+  };
+  const expected = { values: { __proto__: null,
+                               inputStringArr: ['c', 'd'],
+                               inputBoolArr: [true, true],
+                               emptyStringArr: [],
+                               fullStringArr: ['a', 'b'],
+                               emptyBoolArr: [],
+                               fullBoolArr: [false, true, false] },
+                     positionals: [] };
+  const result = parseArgs({ args, options });
+  assert.deepStrictEqual(result, expected);
+});
+
+test('when default is set, the option must be added as result', () => {
+  const args = [];
+  const options = {
+    a: { type: 'string', default: 'HELLO' },
+    b: { type: 'boolean', default: false },
+    c: { type: 'boolean', default: true }
+  };
+  const expected = { values: { __proto__: null, a: 'HELLO', b: false, c: true }, positionals: [] };
+
+  const result = parseArgs({ args, options });
+  assert.deepStrictEqual(result, expected);
+});
+
+test('when default is set, the args value takes precedence', () => {
+  const args = ['--a', 'WORLD', '--b', '-c'];
+  const options = {
+    a: { type: 'string', default: 'HELLO' },
+    b: { type: 'boolean', default: false },
+    c: { type: 'boolean', default: true }
+  };
+  const expected = { values: { __proto__: null, a: 'WORLD', b: true, c: true }, positionals: [] };
+
+  const result = parseArgs({ args, options });
+  assert.deepStrictEqual(result, expected);
+});
+
+test('tokens should not include the default options', () => {
+  const args = [];
+  const options = {
+    a: { type: 'string', default: 'HELLO' },
+    b: { type: 'boolean', default: false },
+    c: { type: 'boolean', default: true }
+  };
+
+  const expectedTokens = [];
+
+  const { tokens } = parseArgs({ args, options, tokens: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('tokens:true should not include the default options after the args input', () => {
+  const args = ['--z', 'zero', 'positional-item'];
+  const options = {
+    z: { type: 'string' },
+    a: { type: 'string', default: 'HELLO' },
+    b: { type: 'boolean', default: false },
+    c: { type: 'boolean', default: true }
+  };
+
+  const expectedTokens = [
+    { kind: 'option', name: 'z', rawName: '--z', index: 0, value: 'zero', inlineValue: false },
+    { kind: 'positional', index: 2, value: 'positional-item' },
+  ];
+
+  const { tokens } = parseArgs({ args, options, tokens: true, allowPositionals: true });
+  assert.deepStrictEqual(tokens, expectedTokens);
+});
+
+test('proto as default value must be ignored', () => {
+  const args = [];
+  const options = Object.create(null);
+
+  // eslint-disable-next-line no-proto
+  options.__proto__ = { type: 'string', default: 'HELLO' };
+
+  const result = parseArgs({ args, options, allowPositionals: true });
+  const expected = { values: { __proto__: null }, positionals: [] };
+  assert.deepStrictEqual(result, expected);
+});
+
+
+test('multiple as false should expect a String', () => {
+  const args = [];
+  const options = { alpha: { type: 'string', multiple: false, default: ['array'] } };
+  assert.throws(() => {
+    parseArgs({ args, options });
+  }, /"options\.alpha\.default" property must be of type string/
+  );
+});

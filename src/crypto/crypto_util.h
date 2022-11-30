@@ -111,31 +111,18 @@ struct MarkPopErrorOnReturn {
   ~MarkPopErrorOnReturn() { ERR_pop_to_mark(); }
 };
 
-// Ensure that OpenSSL has enough entropy (at least 256 bits) for its PRNG.
-// The entropy pool starts out empty and needs to fill up before the PRNG
-// can be used securely.  Once the pool is filled, it never dries up again;
-// its contents is stirred and reused when necessary.
-//
-// OpenSSL normally fills the pool automatically but not when someone starts
-// generating random numbers before the pool is full: in that case OpenSSL
-// keeps lowering the entropy estimate to thwart attackers trying to guess
-// the initial state of the PRNG.
-//
-// When that happens, we will have to wait until enough entropy is available.
-// That should normally never take longer than a few milliseconds.
-//
-// OpenSSL draws from /dev/random and /dev/urandom.  While /dev/random may
-// block pending "true" randomness, /dev/urandom is a CSPRNG that doesn't
-// block under normal circumstances.
-//
-// The only time when /dev/urandom may conceivably block is right after boot,
-// when the whole system is still low on entropy.  That's not something we can
-// do anything about.
-void CheckEntropy();
+struct CSPRNGResult {
+  const bool ok;
+  MUST_USE_RESULT bool is_ok() const { return ok; }
+  MUST_USE_RESULT bool is_err() const { return !ok; }
+};
 
-// Generate length bytes of random data. If this returns false, the data
-// may not be truly random but it's still generally good enough.
-bool EntropySource(unsigned char* buffer, size_t length);
+// Either succeeds with exactly |length| bytes of cryptographically
+// strong pseudo-random data, or fails. This function may block.
+// Don't assume anything about the contents of |buffer| on error.
+// As a special case, |length == 0| can be used to check if the CSPRNG
+// is properly seeded without consuming entropy.
+MUST_USE_RESULT CSPRNGResult CSPRNG(void* buffer, size_t length);
 
 int PasswordCallback(char* buf, int size, int rwflag, void* u);
 
@@ -346,14 +333,13 @@ class CryptoJob : public AsyncWrap, public ThreadPoolWork {
  public:
   using AdditionalParams = typename CryptoJobTraits::AdditionalParameters;
 
-  explicit CryptoJob(
-      Environment* env,
-      v8::Local<v8::Object> object,
-      AsyncWrap::ProviderType type,
-      CryptoJobMode mode,
-      AdditionalParams&& params)
+  explicit CryptoJob(Environment* env,
+                     v8::Local<v8::Object> object,
+                     AsyncWrap::ProviderType type,
+                     CryptoJobMode mode,
+                     AdditionalParams&& params)
       : AsyncWrap(env, object, type),
-        ThreadPoolWork(env),
+        ThreadPoolWork(env, "crypto"),
         mode_(mode),
         params_(std::move(params)) {
     // If the CryptoJob is async, then the instance will be
@@ -443,12 +429,15 @@ class CryptoJob : public AsyncWrap, public ThreadPoolWork {
       v8::FunctionCallback new_fn,
       Environment* env,
       v8::Local<v8::Object> target) {
-    v8::Local<v8::FunctionTemplate> job = env->NewFunctionTemplate(new_fn);
+    v8::Isolate* isolate = env->isolate();
+    v8::HandleScope scope(isolate);
+    v8::Local<v8::Context> context = env->context();
+    v8::Local<v8::FunctionTemplate> job = NewFunctionTemplate(isolate, new_fn);
     job->Inherit(AsyncWrap::GetConstructorTemplate(env));
     job->InstanceTemplate()->SetInternalFieldCount(
         AsyncWrap::kInternalFieldCount);
-    env->SetProtoMethod(job, "run", Run);
-    env->SetConstructorFunction(target, CryptoJobTraits::JobName, job);
+    SetProtoMethod(isolate, job, "run", Run);
+    SetConstructorFunction(context, target, CryptoJobTraits::JobName, job);
   }
 
   static void RegisterExternalReferences(v8::FunctionCallback new_fn,
@@ -696,24 +685,30 @@ template <typename T>
 class ArrayBufferOrViewContents {
  public:
   ArrayBufferOrViewContents() = default;
+  ArrayBufferOrViewContents(const ArrayBufferOrViewContents&) = delete;
+  void operator=(const ArrayBufferOrViewContents&) = delete;
 
   inline explicit ArrayBufferOrViewContents(v8::Local<v8::Value> buf) {
+    if (buf.IsEmpty()) {
+      return;
+    }
+
     CHECK(IsAnyByteSource(buf));
     if (buf->IsArrayBufferView()) {
       auto view = buf.As<v8::ArrayBufferView>();
       offset_ = view->ByteOffset();
       length_ = view->ByteLength();
-      store_ = view->Buffer()->GetBackingStore();
+      data_ = view->Buffer()->Data();
     } else if (buf->IsArrayBuffer()) {
       auto ab = buf.As<v8::ArrayBuffer>();
       offset_ = 0;
       length_ = ab->ByteLength();
-      store_ = ab->GetBackingStore();
+      data_ = ab->Data();
     } else {
       auto sab = buf.As<v8::SharedArrayBuffer>();
       offset_ = 0;
       length_ = sab->ByteLength();
-      store_ = sab->GetBackingStore();
+      data_ = sab->Data();
     }
   }
 
@@ -723,7 +718,7 @@ class ArrayBufferOrViewContents {
     // length is zero, so we have to return something.
     if (size() == 0)
       return &buf;
-    return reinterpret_cast<T*>(store_->Data()) + offset_;
+    return reinterpret_cast<T*>(data_) + offset_;
   }
 
   inline T* data() {
@@ -732,7 +727,7 @@ class ArrayBufferOrViewContents {
     // length is zero, so we have to return something.
     if (size() == 0)
       return &buf;
-    return reinterpret_cast<T*>(store_->Data()) + offset_;
+    return reinterpret_cast<T*>(data_) + offset_;
   }
 
   inline size_t size() const { return length_; }
@@ -772,7 +767,14 @@ class ArrayBufferOrViewContents {
   T buf = 0;
   size_t offset_ = 0;
   size_t length_ = 0;
-  std::shared_ptr<v8::BackingStore> store_;
+  void* data_ = nullptr;
+
+  // Declaring operator new and delete as deleted is not spec compliant.
+  // Therefore declare them private instead to disable dynamic alloc
+  void* operator new(size_t);
+  void* operator new[](size_t);
+  void operator delete(void*);
+  void operator delete[](void*);
 };
 
 v8::MaybeLocal<v8::Value> EncodeBignum(
@@ -787,6 +789,8 @@ v8::Maybe<bool> SetEncodedValue(
     v8::Local<v8::String> name,
     const BIGNUM* bn,
     int size = 0);
+
+bool SetRsaOaepLabel(const EVPKeyCtxPointer& rsa, const ByteSource& label);
 
 namespace Util {
 void Initialize(Environment* env, v8::Local<v8::Object> target);

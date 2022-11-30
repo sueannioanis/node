@@ -50,7 +50,8 @@ class HostPort {
 
 class Options {
  public:
-  virtual void CheckOptions(std::vector<std::string>* errors) {}
+  virtual void CheckOptions(std::vector<std::string>* errors,
+                            std::vector<std::string>* argv) {}
   virtual ~Options() = default;
 };
 
@@ -71,6 +72,7 @@ class DebugOptions : public Options {
   DebugOptions(DebugOptions&&) = default;
   DebugOptions& operator=(DebugOptions&&) = default;
 
+  bool allow_attaching_debugger = true;
   // --inspect
   bool inspector_enabled = false;
   // --debug
@@ -98,7 +100,8 @@ class DebugOptions : public Options {
     return break_first_line || break_node_first_line;
   }
 
-  void CheckOptions(std::vector<std::string>* errors) override;
+  void CheckOptions(std::vector<std::string>* errors,
+                    std::vector<std::string>* argv) override;
 };
 
 class EnvironmentOptions : public Options {
@@ -108,9 +111,9 @@ class EnvironmentOptions : public Options {
   std::string dns_result_order;
   bool enable_source_maps = false;
   bool experimental_fetch = true;
-  bool experimental_global_web_crypto = false;
+  bool experimental_global_customevent = true;
+  bool experimental_global_web_crypto = true;
   bool experimental_https_modules = false;
-  std::string experimental_specifier_resolution;
   bool experimental_wasm_modules = false;
   bool experimental_import_meta_resolve = false;
   std::string module_type;
@@ -135,6 +138,7 @@ class EnvironmentOptions : public Options {
   bool preserve_symlinks = false;
   bool preserve_symlinks_main = false;
   bool prof_process = false;
+  bool update_assert_snapshot = false;
 #if HAVE_INSPECTOR
   std::string cpu_prof_dir;
   static const uint64_t kDefaultCpuProfInterval = 1000;
@@ -150,6 +154,7 @@ class EnvironmentOptions : public Options {
   std::string redirect_warnings;
   std::string diagnostic_dir;
   bool test_runner = false;
+  std::vector<std::string> test_name_pattern;
   bool test_only = false;
   bool test_udp_no_try_send = false;
   bool throw_deprecation = false;
@@ -170,6 +175,10 @@ class EnvironmentOptions : public Options {
       false;
 #endif  // DEBUG
 
+  bool watch_mode = false;
+  bool watch_mode_report_to_parent = false;
+  std::vector<std::string> watch_mode_paths;
+
   bool syntax_check_only = false;
   bool has_eval_string = false;
   bool experimental_wasi = false;
@@ -187,14 +196,17 @@ class EnvironmentOptions : public Options {
   bool tls_max_v1_3 = false;
   std::string tls_keylog;
 
-  std::vector<std::string> preload_modules;
+  std::vector<std::string> preload_cjs_modules;
+
+  std::vector<std::string> preload_esm_modules;
 
   std::vector<std::string> user_argv;
 
   inline DebugOptions* get_debug_options() { return &debug_options_; }
   inline const DebugOptions& debug_options() const { return debug_options_; }
 
-  void CheckOptions(std::vector<std::string>* errors) override;
+  void CheckOptions(std::vector<std::string>* errors,
+                    std::vector<std::string>* argv) override;
 
  private:
   DebugOptions debug_options_;
@@ -209,7 +221,8 @@ class PerIsolateOptions : public Options {
   bool experimental_shadow_realm = false;
   std::string report_signal = "SIGUSR2";
   inline EnvironmentOptions* get_per_env_options();
-  void CheckOptions(std::vector<std::string>* errors) override;
+  void CheckOptions(std::vector<std::string>* errors,
+                    std::vector<std::string>* argv) override;
 };
 
 class PerProcessOptions : public Options {
@@ -236,6 +249,7 @@ class PerProcessOptions : public Options {
   // snapshot used in different isolates in the same process to be the same.
   // Therefore --node-snapshot is a per-process option.
   bool node_snapshot = true;
+  std::string snapshot_blob;
 
   std::vector<std::string> security_reverts;
   bool print_bash_completion = false;
@@ -281,7 +295,8 @@ class PerProcessOptions : public Options {
   std::vector<std::string> cmdline;
 
   inline PerIsolateOptions* get_per_isolate_options();
-  void CheckOptions(std::vector<std::string>* errors) override;
+  void CheckOptions(std::vector<std::string>* errors,
+                    std::vector<std::string>* argv) override;
 };
 
 // The actual options parser, as opposed to the structs containing them:
@@ -319,37 +334,37 @@ class OptionsParser {
   // sources (i.e. NODE_OPTIONS).
   void AddOption(const char* name,
                  const char* help_text,
-                 bool Options::* field,
-                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment,
+                 bool Options::*field,
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvvar,
                  bool default_is_true = false);
   void AddOption(const char* name,
                  const char* help_text,
-                 uint64_t Options::* field,
-                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
+                 uint64_t Options::*field,
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvvar);
   void AddOption(const char* name,
                  const char* help_text,
-                 int64_t Options::* field,
-                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
+                 int64_t Options::*field,
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvvar);
   void AddOption(const char* name,
                  const char* help_text,
-                 std::string Options::* field,
-                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
+                 std::string Options::*field,
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvvar);
   void AddOption(const char* name,
                  const char* help_text,
-                 std::vector<std::string> Options::* field,
-                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
+                 std::vector<std::string> Options::*field,
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvvar);
   void AddOption(const char* name,
                  const char* help_text,
-                 HostPort Options::* field,
-                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
+                 HostPort Options::*field,
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvvar);
   void AddOption(const char* name,
                  const char* help_text,
                  NoOp no_op_tag,
-                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvvar);
   void AddOption(const char* name,
                  const char* help_text,
                  V8Option v8_option_tag,
-                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvvar);
 
   // Adds aliases. An alias can be of the form "--option-a" -> "--option-b",
   // or have a more complex group expansion, like

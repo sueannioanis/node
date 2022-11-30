@@ -35,15 +35,15 @@ is used to read the data from the stream.
 
 ```mjs
 import {
-  ReadableStream
+  ReadableStream,
 } from 'node:stream/web';
 
 import {
-  setInterval as every
+  setInterval as every,
 } from 'node:timers/promises';
 
 import {
-  performance
+  performance,
 } from 'node:perf_hooks';
 
 const SECOND = 1000;
@@ -52,7 +52,7 @@ const stream = new ReadableStream({
   async start(controller) {
     for await (const _ of every(SECOND))
       controller.enqueue(performance.now());
-  }
+  },
 });
 
 for await (const value of stream)
@@ -61,15 +61,15 @@ for await (const value of stream)
 
 ```cjs
 const {
-  ReadableStream
+  ReadableStream,
 } = require('node:stream/web');
 
 const {
-  setInterval: every
+  setInterval: every,
 } = require('node:timers/promises');
 
 const {
-  performance
+  performance,
 } = require('node:perf_hooks');
 
 const SECOND = 1000;
@@ -78,7 +78,7 @@ const stream = new ReadableStream({
   async start(controller) {
     for await (const _ of every(SECOND))
       controller.enqueue(performance.now());
-  }
+  },
 });
 
 (async () => {
@@ -238,7 +238,7 @@ const stream = new ReadableStream({
 const transform = new TransformStream({
   transform(chunk, controller) {
     controller.enqueue(chunk.toUpperCase());
-  }
+  },
 });
 
 const transformedStream = stream.pipeThrough(transform);
@@ -262,7 +262,7 @@ const stream = new ReadableStream({
 const transform = new TransformStream({
   transform(chunk, controller) {
     controller.enqueue(chunk.toUpperCase());
-  }
+  },
 });
 
 const transformedStream = stream.pipeThrough(transform);
@@ -299,6 +299,12 @@ is active.
 
 <!-- YAML
 added: v16.5.0
+changes:
+  - version:
+    - v18.10.0
+    - v16.18.0
+    pr-url: https://github.com/nodejs/node/pull/44505
+    description: Support teeing a readable byte stream.
 -->
 
 * Returns: {ReadableStream\[]}
@@ -470,11 +476,11 @@ data that avoids extraneous copying.
 
 ```mjs
 import {
-  open
+  open,
 } from 'node:fs/promises';
 
 import {
-  ReadableStream
+  ReadableStream,
 } from 'node:stream/web';
 
 import { Buffer } from 'node:buffer';
@@ -495,7 +501,7 @@ class Source {
     } = await this.file.read({
       buffer: view,
       offset: view.byteOffset,
-      length: view.byteLength
+      length: view.byteLength,
     });
 
     if (bytesRead === 0) {
@@ -647,6 +653,10 @@ Signals an error that causes the {ReadableStream} to error and close.
 
 <!-- YAML
 added: v16.5.0
+changes:
+  - version: v18.10.0
+    pr-url: https://github.com/nodejs/node/pull/44702
+    description: Support handling a BYOB pull request from a released reader.
 -->
 
 Every {ReadableStream} has a controller that is responsible for
@@ -764,13 +774,13 @@ The `WritableStream` is a destination to which stream data is sent.
 
 ```mjs
 import {
-  WritableStream
+  WritableStream,
 } from 'node:stream/web';
 
 const stream = new WritableStream({
   write(chunk) {
     console.log(chunk);
-  }
+  },
 });
 
 await stream.getWriter().write('Hello World');
@@ -974,10 +984,6 @@ changes:
 The `WritableStreamDefaultController` manage's the {WritableStream}'s
 internal state.
 
-#### `writableStreamDefaultController.abortReason`
-
-* Type: {any} The `reason` value passed to `writableStream.abort()`.
-
 #### `writableStreamDefaultController.error(error)`
 
 <!-- YAML
@@ -1012,13 +1018,13 @@ queue.
 
 ```mjs
 import {
-  TransformStream
+  TransformStream,
 } from 'node:stream/web';
 
 const transform = new TransformStream({
   transform(chunk, controller) {
     controller.enqueue(chunk.toUpperCase());
-  }
+  },
 });
 
 await Promise.all([
@@ -1457,6 +1463,32 @@ added: v16.7.0
 * Returns: {Promise} Fulfills with an `ArrayBuffer` containing the full
   contents of the stream.
 
+```mjs
+import { buffer as arrayBuffer } from 'node:stream/consumers';
+import { Readable } from 'node:stream';
+import { TextEncoder } from 'node:util';
+
+const encoder = new TextEncoder();
+const dataArray = encoder.encode('hello world from consumers!');
+
+const readable = Readable.from(dataArray);
+const data = await arrayBuffer(readable);
+console.log(`from readable: ${data.byteLength}`);
+```
+
+```cjs
+const { arrayBuffer } = require('node:stream/consumers');
+const { Readable } = require('node:stream');
+const { TextEncoder } = require('node:util');
+
+const encoder = new TextEncoder();
+const dataArray = encoder.encode(['hello world from consumers!']);
+const readable = Readable.from(dataArray);
+arrayBuffer(readable).then((data) => {
+  console.log(`from readable: ${data.byteLength}`);
+});
+```
+
 #### `streamConsumers.blob(stream)`
 
 <!-- YAML
@@ -1466,6 +1498,27 @@ added: v16.7.0
 * `stream` {ReadableStream|stream.Readable|AsyncIterator}
 * Returns: {Promise} Fulfills with a {Blob} containing the full contents
   of the stream.
+
+```mjs
+import { blob } from 'node:stream/consumers';
+
+const dataBlob = new Blob(['hello world from consumers!']);
+
+const readable = dataBlob.stream();
+const data = await blob(readable);
+console.log(`from readable: ${data.size}`);
+```
+
+```cjs
+const { blob } = require('node:stream/consumers');
+
+const dataBlob = new Blob(['hello world from consumers!']);
+
+const readable = dataBlob.stream();
+blob(readable).then((data) => {
+  console.log(`from readable: ${data.size}`);
+});
+```
 
 #### `streamConsumers.buffer(stream)`
 
@@ -1477,6 +1530,31 @@ added: v16.7.0
 * Returns: {Promise} Fulfills with a {Buffer} containing the full
   contents of the stream.
 
+```mjs
+import { buffer } from 'node:stream/consumers';
+import { Readable } from 'node:stream';
+import { Buffer } from 'node:buffer';
+
+const dataBuffer = Buffer.from('hello world from consumers!');
+
+const readable = Readable.from(dataBuffer);
+const data = await buffer(readable);
+console.log(`from readable: ${data.length}`);
+```
+
+```cjs
+const { buffer } = require('node:stream/consumers');
+const { Readable } = require('node:stream');
+const { Buffer } = require('node:buffer');
+
+const dataBuffer = Buffer.from('hello world from consumers!');
+
+const readable = Readable.from(dataBuffer);
+buffer(readable).then((data) => {
+  console.log(`from readable: ${data.length}`);
+});
+```
+
 #### `streamConsumers.json(stream)`
 
 <!-- YAML
@@ -1487,6 +1565,43 @@ added: v16.7.0
 * Returns: {Promise} Fulfills with the contents of the stream parsed as a
   UTF-8 encoded string that is then passed through `JSON.parse()`.
 
+```mjs
+import { json } from 'node:stream/consumers';
+import { Readable } from 'node:stream';
+
+const items = Array.from(
+  {
+    length: 100,
+  },
+  () => ({
+    message: 'hello world from consumers!',
+  }),
+);
+
+const readable = Readable.from(JSON.stringify(items));
+const data = await json(readable);
+console.log(`from readable: ${data.length}`);
+```
+
+```cjs
+const { json } = require('node:stream/consumers');
+const { Readable } = require('node:stream');
+
+const items = Array.from(
+  {
+    length: 100,
+  },
+  () => ({
+    message: 'hello world from consumers!',
+  }),
+);
+
+const readable = Readable.from(JSON.stringify(items));
+json(readable).then((data) => {
+  console.log(`from readable: ${data.length}`);
+});
+```
+
 #### `streamConsumers.text(stream)`
 
 <!-- YAML
@@ -1496,6 +1611,25 @@ added: v16.7.0
 * `stream` {ReadableStream|stream.Readable|AsyncIterator}
 * Returns: {Promise} Fulfills with the contents of the stream parsed as a
   UTF-8 encoded string.
+
+```mjs
+import { json, text, blob, buffer } from 'node:stream/consumers';
+import { Readable } from 'node:stream';
+
+const readable = Readable.from('Hello world from consumers!');
+const data = await text(readable);
+console.log(`from readable: ${data.length}`);
+```
+
+```cjs
+const { text } = require('node:stream/consumers');
+const { Readable } = require('node:stream');
+
+const readable = Readable.from('Hello world from consumers!');
+text(readable).then((data) => {
+  console.log(`from readable: ${data.length}`);
+});
+```
 
 [Streams]: stream.md
 [WHATWG Streams Standard]: https://streams.spec.whatwg.org/

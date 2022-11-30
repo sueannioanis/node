@@ -154,7 +154,7 @@ Running tests can also be done using `describe` to declare a suite
 and `it` to declare a test.
 A suite is used to organize and group related tests together.
 `it` is an alias for `test`, except there is no test context passed,
-since nesting is done using suites, as demonstrated in this example
+since nesting is done using suites.
 
 ```js
 describe('A thing', () => {
@@ -174,7 +174,7 @@ describe('A thing', () => {
 });
 ```
 
-`describe` and `it` are imported from the `node:test` module
+`describe` and `it` are imported from the `node:test` module.
 
 ```mjs
 import { describe, it } from 'node:test';
@@ -184,7 +184,7 @@ import { describe, it } from 'node:test';
 const { describe, it } = require('node:test');
 ```
 
-### `only` tests
+## `only` tests
 
 If Node.js is started with the [`--test-only`][] command-line option, it is
 possible to skip all top level tests except for a selected subset by passing
@@ -220,6 +220,42 @@ test('this test is not run', () => {
 });
 ```
 
+## Filtering tests by name
+
+The [`--test-name-pattern`][] command-line option can be used to only run tests
+whose name matches the provided pattern. Test name patterns are interpreted as
+JavaScript regular expressions. The `--test-name-pattern` option can be
+specified multiple times in order to run nested tests. For each test that is
+executed, any corresponding test hooks, such as `beforeEach()`, are also
+run.
+
+Given the following test file, starting Node.js with the
+`--test-name-pattern="test [1-3]"` option would cause the test runner to execute
+`test 1`, `test 2`, and `test 3`. If `test 1` did not match the test name
+pattern, then its subtests would not execute, despite matching the pattern. The
+same set of tests could also be executed by passing `--test-name-pattern`
+multiple times (e.g. `--test-name-pattern="test 1"`,
+`--test-name-pattern="test 2"`, etc.).
+
+```js
+test('test 1', async (t) => {
+  await t.test('test 2');
+  await t.test('test 3');
+});
+
+test('Test 4', async (t) => {
+  await t.test('Test 5');
+  await t.test('test 6');
+});
+```
+
+Test name patterns can also be specified using regular expression literals. This
+allows regular expression flags to be used. In the previous example, starting
+Node.js with `--test-name-pattern="/test [4-5]/i"` would match `Test 4` and
+`Test 5` because the pattern is case-insensitive.
+
+Test name patterns do not change the set of files that the test runner executes.
+
 ## Extraneous asynchronous activity
 
 Once a test function finishes executing, the TAP results are output as quickly
@@ -236,8 +272,8 @@ top level of the file's TAP output.
 
 The second `setImmediate()` creates an `uncaughtException` event.
 `uncaughtException` and `unhandledRejection` events originating from a completed
-test are handled by the `test` module and reported as diagnostic warnings in
-the top level of the file's TAP output.
+test are marked as failed by the `test` module and reported as diagnostic
+warnings in the top level of the file's TAP output.
 
 ```js
 test('a test that creates asynchronous activity', (t) => {
@@ -254,6 +290,25 @@ test('a test that creates asynchronous activity', (t) => {
   // The test finishes after this line.
 });
 ```
+
+## Watch mode
+
+<!-- YAML
+added: v19.2.0
+-->
+
+> Stability: 1 - Experimental
+
+The Node.js test runner supports running in watch mode by passing the `--watch` flag:
+
+```bash
+node --test --watch
+```
+
+In watch mode, the test runner will watch for changes to test files and
+their dependencies. When a change is detected, the test runner will
+rerun the tests affected by the change.
+The test runner will continue to run until the process is terminated.
 
 ## Running tests from the command line
 
@@ -316,10 +371,140 @@ Otherwise, the test is considered to be a failure. Test files must be
 executable by Node.js, but are not required to use the `node:test` module
 internally.
 
+## Mocking
+
+The `node:test` module supports mocking during testing via a top-level `mock`
+object. The following example creates a spy on a function that adds two numbers
+together. The spy is then used to assert that the function was called as
+expected.
+
+```mjs
+import assert from 'node:assert';
+import { mock, test } from 'node:test';
+
+test('spies on a function', () => {
+  const sum = mock.fn((a, b) => {
+    return a + b;
+  });
+
+  assert.strictEqual(sum.mock.calls.length, 0);
+  assert.strictEqual(sum(3, 4), 7);
+  assert.strictEqual(sum.mock.calls.length, 1);
+
+  const call = sum.mock.calls[0];
+  assert.deepStrictEqual(call.arguments, [3, 4]);
+  assert.strictEqual(call.result, 7);
+  assert.strictEqual(call.error, undefined);
+
+  // Reset the globally tracked mocks.
+  mock.reset();
+});
+```
+
+```cjs
+'use strict';
+const assert = require('node:assert');
+const { mock, test } = require('node:test');
+
+test('spies on a function', () => {
+  const sum = mock.fn((a, b) => {
+    return a + b;
+  });
+
+  assert.strictEqual(sum.mock.calls.length, 0);
+  assert.strictEqual(sum(3, 4), 7);
+  assert.strictEqual(sum.mock.calls.length, 1);
+
+  const call = sum.mock.calls[0];
+  assert.deepStrictEqual(call.arguments, [3, 4]);
+  assert.strictEqual(call.result, 7);
+  assert.strictEqual(call.error, undefined);
+
+  // Reset the globally tracked mocks.
+  mock.reset();
+});
+```
+
+The same mocking functionality is also exposed on the [`TestContext`][] object
+of each test. The following example creates a spy on an object method using the
+API exposed on the `TestContext`. The benefit of mocking via the test context is
+that the test runner will automatically restore all mocked functionality once
+the test finishes.
+
+```js
+test('spies on an object method', (t) => {
+  const number = {
+    value: 5,
+    add(a) {
+      return this.value + a;
+    },
+  };
+
+  t.mock.method(number, 'add');
+  assert.strictEqual(number.add.mock.calls.length, 0);
+  assert.strictEqual(number.add(3), 8);
+  assert.strictEqual(number.add.mock.calls.length, 1);
+
+  const call = number.add.mock.calls[0];
+
+  assert.deepStrictEqual(call.arguments, [3]);
+  assert.strictEqual(call.result, 8);
+  assert.strictEqual(call.target, undefined);
+  assert.strictEqual(call.this, number);
+});
+```
+
+## `run([options])`
+
+<!-- YAML
+added: v18.9.0
+-->
+
+* `options` {Object} Configuration options for running tests. The following
+  properties are supported:
+  * `concurrency` {number|boolean} If a number is provided,
+    then that many files would run in parallel.
+    If truthy, it would run (number of cpu cores - 1)
+    files in parallel.
+    If falsy, it would only run one file at a time.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `true`.
+  * `files`: {Array} An array containing the list of files to run.
+    **Default** matching files from [test runner execution model][].
+  * `signal` {AbortSignal} Allows aborting an in-progress test execution.
+  * `timeout` {number} A number of milliseconds the test execution will
+    fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
+  * `inspectPort` {number|Function} Sets inspector port of test child process.
+    This can be a number, or a function that takes no arguments and returns a
+    number. If a nullish value is provided, each process gets its own port,
+    incremented from the primary's `process.debugPort`.
+    **Default:** `undefined`.
+* Returns: {TapStream}
+
+```js
+run({ files: [path.resolve('./tests/test.js')] })
+  .pipe(process.stdout);
+```
+
 ## `test([name][, options][, fn])`
 
 <!-- YAML
-added: v18.0.0
+added:
+  - v18.0.0
+  - v16.17.0
+changes:
+  - version:
+    - v18.8.0
+    - v16.18.0
+    pr-url: https://github.com/nodejs/node/pull/43554
+    description: Add a `signal` option.
+  - version:
+    - v18.7.0
+    - v16.17.0
+    pr-url: https://github.com/nodejs/node/pull/43505
+    description: Add a `timeout` option.
 -->
 
 * `name` {string} The name of the test, which is displayed when reporting test
@@ -327,18 +512,27 @@ added: v18.0.0
   does not have a name.
 * `options` {Object} Configuration options for the test. The following
   properties are supported:
-  * `concurrency` {number} The number of tests that can be run at the same time.
+  * `concurrency` {number|boolean} If a number is provided,
+    then that many tests would run in parallel.
+    If truthy, it would run (number of cpu cores - 1)
+    tests in parallel.
+    For subtests, it will be `Infinity` tests in parallel.
+    If falsy, it would only run one test at a time.
     If unspecified, subtests inherit this value from their parent.
-    **Default:** `1`.
+    **Default:** `false`.
   * `only` {boolean} If truthy, and the test context is configured to run
     `only` tests, then this test will be run. Otherwise, the test is skipped.
     **Default:** `false`.
+  * `signal` {AbortSignal} Allows aborting an in-progress test.
   * `skip` {boolean|string} If truthy, the test is skipped. If a string is
     provided, that string is displayed in the test results as the reason for
     skipping the test. **Default:** `false`.
   * `todo` {boolean|string} If truthy, the test marked as `TODO`. If a string
     is provided, that string is displayed in the test results as the reason why
     the test is `TODO`. **Default:** `false`.
+  * `timeout` {number} A number of milliseconds the test will fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
 * `fn` {Function|AsyncFunction} The function under test. The first argument
   to this function is a [`TestContext`][] object. If the test uses callbacks,
   the callback function is passed as the second argument. **Default:** A no-op
@@ -371,15 +565,21 @@ test('top level test', async (t) => {
 });
 ```
 
+The `timeout` option can be used to fail the test if it takes longer than
+`timeout` milliseconds to complete. However, it is not a reliable mechanism for
+canceling tests because a running test might block the application thread and
+thus prevent the scheduled cancellation.
+
 ## `describe([name][, options][, fn])`
 
 * `name` {string} The name of the suite, which is displayed when reporting test
   results. **Default:** The `name` property of `fn`, or `'<anonymous>'` if `fn`
   does not have a name.
 * `options` {Object} Configuration options for the suite.
-  supports the same options as `test([name][, options][, fn])`
-* `fn` {Function} The function under suite.
-  a synchronous function declaring all subtests and subsuites.
+  supports the same options as `test([name][, options][, fn])`.
+* `fn` {Function|AsyncFunction} The function under suite
+  declaring all subtests and subsuites.
+  The first argument to this function is a [`SuiteContext`][] object.
   **Default:** A no-op function.
 * Returns: `undefined`.
 
@@ -387,7 +587,7 @@ The `describe()` function imported from the `node:test` module. Each
 invocation of this function results in the creation of a Subtest
 and a test point in the TAP output.
 After invocation of top level `describe` functions,
-all top level tests and suites will execute
+all top level tests and suites will execute.
 
 ## `describe.skip([name][, options][, fn])`
 
@@ -424,20 +624,547 @@ same as [`it([name], { skip: true }[, fn])`][it options].
 Shorthand for marking a test as `TODO`,
 same as [`it([name], { todo: true }[, fn])`][it options].
 
+## `before([fn][, options])`
+
+<!-- YAML
+added:
+  - v18.8.0
+  - v16.18.0
+-->
+
+* `fn` {Function|AsyncFunction} The hook function.
+  If the hook uses callbacks,
+  the callback function is passed as the second argument. **Default:** A no-op
+  function.
+* `options` {Object} Configuration options for the hook. The following
+  properties are supported:
+  * `signal` {AbortSignal} Allows aborting an in-progress hook.
+  * `timeout` {number} A number of milliseconds the hook will fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
+
+This function is used to create a hook running before running a suite.
+
+```js
+describe('tests', async () => {
+  before(() => console.log('about to run some test'));
+  it('is a subtest', () => {
+    assert.ok('some relevant assertion here');
+  });
+});
+```
+
+## `after([fn][, options])`
+
+<!-- YAML
+added:
+ - v18.8.0
+ - v16.18.0
+-->
+
+* `fn` {Function|AsyncFunction} The hook function.
+  If the hook uses callbacks,
+  the callback function is passed as the second argument. **Default:** A no-op
+  function.
+* `options` {Object} Configuration options for the hook. The following
+  properties are supported:
+  * `signal` {AbortSignal} Allows aborting an in-progress hook.
+  * `timeout` {number} A number of milliseconds the hook will fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
+
+This function is used to create a hook running after  running a suite.
+
+```js
+describe('tests', async () => {
+  after(() => console.log('finished running tests'));
+  it('is a subtest', () => {
+    assert.ok('some relevant assertion here');
+  });
+});
+```
+
+## `beforeEach([fn][, options])`
+
+<!-- YAML
+added:
+  - v18.8.0
+  - v16.18.0
+-->
+
+* `fn` {Function|AsyncFunction} The hook function.
+  If the hook uses callbacks,
+  the callback function is passed as the second argument. **Default:** A no-op
+  function.
+* `options` {Object} Configuration options for the hook. The following
+  properties are supported:
+  * `signal` {AbortSignal} Allows aborting an in-progress hook.
+  * `timeout` {number} A number of milliseconds the hook will fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
+
+This function is used to create a hook running
+before each subtest of the current suite.
+
+```js
+describe('tests', async () => {
+  beforeEach(() => t.diagnostic('about to run a test'));
+  it('is a subtest', () => {
+    assert.ok('some relevant assertion here');
+  });
+});
+```
+
+## `afterEach([fn][, options])`
+
+<!-- YAML
+added:
+  - v18.8.0
+  - v16.18.0
+-->
+
+* `fn` {Function|AsyncFunction} The hook function.
+  If the hook uses callbacks,
+  the callback function is passed as the second argument. **Default:** A no-op
+  function.
+* `options` {Object} Configuration options for the hook. The following
+  properties are supported:
+  * `signal` {AbortSignal} Allows aborting an in-progress hook.
+  * `timeout` {number} A number of milliseconds the hook will fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
+
+This function is used to create a hook running
+after each subtest of the current test.
+
+```js
+describe('tests', async () => {
+  afterEach(() => t.diagnostic('about to run a test'));
+  it('is a subtest', () => {
+    assert.ok('some relevant assertion here');
+  });
+});
+```
+
+## Class: `MockFunctionContext`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+The `MockFunctionContext` class is used to inspect or manipulate the behavior of
+mocks created via the [`MockTracker`][] APIs.
+
+### `ctx.calls`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+* {Array}
+
+A getter that returns a copy of the internal array used to track calls to the
+mock. Each entry in the array is an object with the following properties.
+
+* `arguments` {Array} An array of the arguments passed to the mock function.
+* `error` {any} If the mocked function threw then this property contains the
+  thrown value. **Default:** `undefined`.
+* `result` {any} The value returned by the mocked function.
+* `stack` {Error} An `Error` object whose stack can be used to determine the
+  callsite of the mocked function invocation.
+* `target` {Function|undefined} If the mocked function is a constructor, this
+  field contains the class being constructed. Otherwise this will be
+  `undefined`.
+* `this` {any} The mocked function's `this` value.
+
+### `ctx.callCount()`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+* Returns: {integer} The number of times that this mock has been invoked.
+
+This function returns the number of times that this mock has been invoked. This
+function is more efficient than checking `ctx.calls.length` because `ctx.calls`
+is a getter that creates a copy of the internal call tracking array.
+
+### `ctx.mockImplementation(implementation)`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+* `implementation` {Function|AsyncFunction} The function to be used as the
+  mock's new implementation.
+
+This function is used to change the behavior of an existing mock.
+
+The following example creates a mock function using `t.mock.fn()`, calls the
+mock function, and then changes the mock implementation to a different function.
+
+```js
+test('changes a mock behavior', (t) => {
+  let cnt = 0;
+
+  function addOne() {
+    cnt++;
+    return cnt;
+  }
+
+  function addTwo() {
+    cnt += 2;
+    return cnt;
+  }
+
+  const fn = t.mock.fn(addOne);
+
+  assert.strictEqual(fn(), 1);
+  fn.mock.mockImplementation(addTwo);
+  assert.strictEqual(fn(), 3);
+  assert.strictEqual(fn(), 5);
+});
+```
+
+### `ctx.mockImplementationOnce(implementation[, onCall])`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+* `implementation` {Function|AsyncFunction} The function to be used as the
+  mock's implementation for the invocation number specified by `onCall`.
+* `onCall` {integer} The invocation number that will use `implementation`. If
+  the specified invocation has already occurred then an exception is thrown.
+  **Default:** The number of the next invocation.
+
+This function is used to change the behavior of an existing mock for a single
+invocation. Once invocation `onCall` has occurred, the mock will revert to
+whatever behavior it would have used had `mockImplementationOnce()` not been
+called.
+
+The following example creates a mock function using `t.mock.fn()`, calls the
+mock function, changes the mock implementation to a different function for the
+next invocation, and then resumes its previous behavior.
+
+```js
+test('changes a mock behavior once', (t) => {
+  let cnt = 0;
+
+  function addOne() {
+    cnt++;
+    return cnt;
+  }
+
+  function addTwo() {
+    cnt += 2;
+    return cnt;
+  }
+
+  const fn = t.mock.fn(addOne);
+
+  assert.strictEqual(fn(), 1);
+  fn.mock.mockImplementationOnce(addTwo);
+  assert.strictEqual(fn(), 3);
+  assert.strictEqual(fn(), 4);
+});
+```
+
+### `ctx.restore()`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+Resets the implementation of the mock function to its original behavior. The
+mock can still be used after calling this function.
+
+## Class: `MockTracker`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+The `MockTracker` class is used to manage mocking functionality. The test runner
+module provides a top level `mock` export which is a `MockTracker` instance.
+Each test also provides its own `MockTracker` instance via the test context's
+`mock` property.
+
+### `mock.fn([original[, implementation]][, options])`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+* `original` {Function|AsyncFunction} An optional function to create a mock on.
+  **Default:** A no-op function.
+* `implementation` {Function|AsyncFunction} An optional function used as the
+  mock implementation for `original`. This is useful for creating mocks that
+  exhibit one behavior for a specified number of calls and then restore the
+  behavior of `original`. **Default:** The function specified by `original`.
+* `options` {Object} Optional configuration options for the mock function. The
+  following properties are supported:
+  * `times` {integer} The number of times that the mock will use the behavior of
+    `implementation`. Once the mock function has been called `times` times, it
+    will automatically restore the behavior of `original`. This value must be an
+    integer greater than zero. **Default:** `Infinity`.
+* Returns: {Proxy} The mocked function. The mocked function contains a special
+  `mock` property, which is an instance of [`MockFunctionContext`][], and can
+  be used for inspecting and changing the behavior of the mocked function.
+
+This function is used to create a mock function.
+
+The following example creates a mock function that increments a counter by one
+on each invocation. The `times` option is used to modify the mock behavior such
+that the first two invocations add two to the counter instead of one.
+
+```js
+test('mocks a counting function', (t) => {
+  let cnt = 0;
+
+  function addOne() {
+    cnt++;
+    return cnt;
+  }
+
+  function addTwo() {
+    cnt += 2;
+    return cnt;
+  }
+
+  const fn = t.mock.fn(addOne, addTwo, { times: 2 });
+
+  assert.strictEqual(fn(), 2);
+  assert.strictEqual(fn(), 4);
+  assert.strictEqual(fn(), 5);
+  assert.strictEqual(fn(), 6);
+});
+```
+
+### `mock.getter(object, methodName[, implementation][, options])`
+
+<!-- YAML
+added: REPLACEME
+-->
+
+This function is syntax sugar for [`MockTracker.method`][] with `options.getter`
+set to `true`.
+
+### `mock.method(object, methodName[, implementation][, options])`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+* `object` {Object} The object whose method is being mocked.
+* `methodName` {string|symbol} The identifier of the method on `object` to mock.
+  If `object[methodName]` is not a function, an error is thrown.
+* `implementation` {Function|AsyncFunction} An optional function used as the
+  mock implementation for `object[methodName]`. **Default:** The original method
+  specified by `object[methodName]`.
+* `options` {Object} Optional configuration options for the mock method. The
+  following properties are supported:
+  * `getter` {boolean} If `true`, `object[methodName]` is treated as a getter.
+    This option cannot be used with the `setter` option. **Default:** false.
+  * `setter` {boolean} If `true`, `object[methodName]` is treated as a setter.
+    This option cannot be used with the `getter` option. **Default:** false.
+  * `times` {integer} The number of times that the mock will use the behavior of
+    `implementation`. Once the mocked method has been called `times` times, it
+    will automatically restore the original behavior. This value must be an
+    integer greater than zero. **Default:** `Infinity`.
+* Returns: {Proxy} The mocked method. The mocked method contains a special
+  `mock` property, which is an instance of [`MockFunctionContext`][], and can
+  be used for inspecting and changing the behavior of the mocked method.
+
+This function is used to create a mock on an existing object method. The
+following example demonstrates how a mock is created on an existing object
+method.
+
+```js
+test('spies on an object method', (t) => {
+  const number = {
+    value: 5,
+    subtract(a) {
+      return this.value - a;
+    },
+  };
+
+  t.mock.method(number, 'subtract');
+  assert.strictEqual(number.subtract.mock.calls.length, 0);
+  assert.strictEqual(number.subtract(3), 2);
+  assert.strictEqual(number.subtract.mock.calls.length, 1);
+
+  const call = number.subtract.mock.calls[0];
+
+  assert.deepStrictEqual(call.arguments, [3]);
+  assert.strictEqual(call.result, 2);
+  assert.strictEqual(call.error, undefined);
+  assert.strictEqual(call.target, undefined);
+  assert.strictEqual(call.this, number);
+});
+```
+
+### `mock.reset()`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+This function restores the default behavior of all mocks that were previously
+created by this `MockTracker` and disassociates the mocks from the
+`MockTracker` instance. Once disassociated, the mocks can still be used, but the
+`MockTracker` instance can no longer be used to reset their behavior or
+otherwise interact with them.
+
+After each test completes, this function is called on the test context's
+`MockTracker`. If the global `MockTracker` is used extensively, calling this
+function manually is recommended.
+
+### `mock.restoreAll()`
+
+<!-- YAML
+added: v19.1.0
+-->
+
+This function restores the default behavior of all mocks that were previously
+created by this `MockTracker`. Unlike `mock.reset()`, `mock.restoreAll()` does
+not disassociate the mocks from the `MockTracker` instance.
+
+### `mock.setter(object, methodName[, implementation][, options])`
+
+<!-- YAML
+added: REPLACEME
+-->
+
+This function is syntax sugar for [`MockTracker.method`][] with `options.setter`
+set to `true`.
+
+## Class: `TapStream`
+
+<!-- YAML
+added: v18.9.0
+-->
+
+* Extends {ReadableStream}
+
+A successful call to [`run()`][] method will return a new {TapStream}
+object, streaming a [TAP][] output
+`TapStream` will emit events, in the order of the tests definition
+
+### Event: `'test:diagnostic'`
+
+* `message` {string} The diagnostic message.
+
+Emitted when [`context.diagnostic`][] is called.
+
+### Event: `'test:fail'`
+
+* `data` {Object}
+  * `details` {Object} Additional execution metadata.
+  * `name` {string} The test name.
+  * `testNumber` {number} The ordinal number of the test.
+  * `todo` {string|undefined} Present if [`context.todo`][] is called
+  * `skip` {string|undefined} Present if [`context.skip`][] is called
+
+Emitted when a test fails.
+
+### Event: `'test:pass'`
+
+* `data` {Object}
+  * `details` {Object} Additional execution metadata.
+  * `name` {string} The test name.
+  * `testNumber` {number} The ordinal number of the test.
+  * `todo` {string|undefined} Present if [`context.todo`][] is called
+  * `skip` {string|undefined} Present if [`context.skip`][] is called
+
+Emitted when a test passes.
+
 ## Class: `TestContext`
 
 <!-- YAML
-added: v18.0.0
+added:
+  - v18.0.0
+  - v16.17.0
 -->
 
 An instance of `TestContext` is passed to each test function in order to
 interact with the test runner. However, the `TestContext` constructor is not
 exposed as part of the API.
 
+### `context.beforeEach([fn][, options])`
+
+<!-- YAML
+added:
+  - v18.8.0
+  - v16.18.0
+-->
+
+* `fn` {Function|AsyncFunction} The hook function. The first argument
+  to this function is a [`TestContext`][] object. If the hook uses callbacks,
+  the callback function is passed as the second argument. **Default:** A no-op
+  function.
+* `options` {Object} Configuration options for the hook. The following
+  properties are supported:
+  * `signal` {AbortSignal} Allows aborting an in-progress hook.
+  * `timeout` {number} A number of milliseconds the hook will fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
+
+This function is used to create a hook running
+before each subtest of the current test.
+
+```js
+test('top level test', async (t) => {
+  t.beforeEach((t) => t.diagnostic(`about to run ${t.name}`));
+  await t.test(
+    'This is a subtest',
+    (t) => {
+      assert.ok('some relevant assertion here');
+    },
+  );
+});
+```
+
+### `context.afterEach([fn][, options])`
+
+<!-- YAML
+added:
+  - v18.8.0
+  - v16.18.0
+-->
+
+* `fn` {Function|AsyncFunction} The hook function. The first argument
+  to this function is a [`TestContext`][] object. If the hook uses callbacks,
+  the callback function is passed as the second argument. **Default:** A no-op
+  function.
+* `options` {Object} Configuration options for the hook. The following
+  properties are supported:
+  * `signal` {AbortSignal} Allows aborting an in-progress hook.
+  * `timeout` {number} A number of milliseconds the hook will fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
+
+This function is used to create a hook running
+after each subtest of the current test.
+
+```js
+test('top level test', async (t) => {
+  t.afterEach((t) => t.diagnostic(`finished running ${t.name}`));
+  await t.test(
+    'This is a subtest',
+    (t) => {
+      assert.ok('some relevant assertion here');
+    },
+  );
+});
+```
+
 ### `context.diagnostic(message)`
 
 <!-- YAML
-added: v18.0.0
+added:
+  - v18.0.0
+  - v16.17.0
 -->
 
 * `message` {string} Message to be displayed as a TAP diagnostic.
@@ -452,10 +1179,22 @@ test('top level test', (t) => {
 });
 ```
 
+### `context.name`
+
+<!-- YAML
+added:
+  - v18.8.0
+  - v16.18.0
+-->
+
+The name of the test.
+
 ### `context.runOnly(shouldRunOnlyTests)`
 
 <!-- YAML
-added: v18.0.0
+added:
+  - v18.0.0
+  - v16.17.0
 -->
 
 * `shouldRunOnlyTests` {boolean} Whether or not to run `only` tests.
@@ -476,10 +1215,29 @@ test('top level test', (t) => {
 });
 ```
 
+### `context.signal`
+
+<!-- YAML
+added:
+  - v18.7.0
+  - v16.17.0
+-->
+
+* {AbortSignal} Can be used to abort test subtasks when the test has been
+  aborted.
+
+```js
+test('top level test', async (t) => {
+  await fetch('some/uri', { signal: t.signal });
+});
+```
+
 ### `context.skip([message])`
 
 <!-- YAML
-added: v18.0.0
+added:
+  - v18.0.0
+  - v16.17.0
 -->
 
 * `message` {string} Optional skip message to be displayed in TAP output.
@@ -499,7 +1257,9 @@ test('top level test', (t) => {
 ### `context.todo([message])`
 
 <!-- YAML
-added: v18.0.0
+added:
+  - v18.0.0
+  - v16.17.0
 -->
 
 * `message` {string} Optional `TODO` message to be displayed in TAP output.
@@ -518,7 +1278,20 @@ test('top level test', (t) => {
 ### `context.test([name][, options][, fn])`
 
 <!-- YAML
-added: v18.0.0
+added:
+  - v18.0.0
+  - v16.17.0
+changes:
+  - version:
+    - v18.8.0
+    - v16.18.0
+    pr-url: https://github.com/nodejs/node/pull/43554
+    description: Add a `signal` option.
+  - version:
+    - v18.7.0
+    - v16.17.0
+    pr-url: https://github.com/nodejs/node/pull/43505
+    description: Add a `timeout` option.
 -->
 
 * `name` {string} The name of the subtest, which is displayed when reporting
@@ -532,12 +1305,16 @@ added: v18.0.0
   * `only` {boolean} If truthy, and the test context is configured to run
     `only` tests, then this test will be run. Otherwise, the test is skipped.
     **Default:** `false`.
+  * `signal` {AbortSignal} Allows aborting an in-progress test.
   * `skip` {boolean|string} If truthy, the test is skipped. If a string is
     provided, that string is displayed in the test results as the reason for
     skipping the test. **Default:** `false`.
   * `todo` {boolean|string} If truthy, the test marked as `TODO`. If a string
     is provided, that string is displayed in the test results as the reason why
     the test is `TODO`. **Default:** `false`.
+  * `timeout` {number} A number of milliseconds the test will fail after.
+    If unspecified, subtests inherit this value from their parent.
+    **Default:** `Infinity`.
 * `fn` {Function|AsyncFunction} The function under test. The first argument
   to this function is a [`TestContext`][] object. If the test uses callbacks,
   the callback function is passed as the second argument. **Default:** A no-op
@@ -554,15 +1331,57 @@ test('top level test', async (t) => {
     { only: false, skip: false, concurrency: 1, todo: false },
     (t) => {
       assert.ok('some relevant assertion here');
-    }
+    },
   );
 });
 ```
 
+## Class: `SuiteContext`
+
+<!-- YAML
+added:
+  - v18.7.0
+  - v16.17.0
+-->
+
+An instance of `SuiteContext` is passed to each suite function in order to
+interact with the test runner. However, the `SuiteContext` constructor is not
+exposed as part of the API.
+
+### `context.name`
+
+<!-- YAML
+added:
+  - v18.8.0
+  - v16.18.0
+-->
+
+The name of the suite.
+
+### `context.signal`
+
+<!-- YAML
+added:
+  - v18.7.0
+  - v16.17.0
+-->
+
+* {AbortSignal} Can be used to abort test subtasks when the test has been
+  aborted.
+
 [TAP]: https://testanything.org/
+[`--test-name-pattern`]: cli.md#--test-name-pattern
 [`--test-only`]: cli.md#--test-only
 [`--test`]: cli.md#--test
+[`MockFunctionContext`]: #class-mockfunctioncontext
+[`MockTracker.method`]: #mockmethodobject-methodname-implementation-options
+[`MockTracker`]: #class-mocktracker
+[`SuiteContext`]: #class-suitecontext
 [`TestContext`]: #class-testcontext
+[`context.diagnostic`]: #contextdiagnosticmessage
+[`context.skip`]: #contextskipmessage
+[`context.todo`]: #contexttodomessage
+[`run()`]: #runoptions
 [`test()`]: #testname-options-fn
 [describe options]: #describename-options-fn
 [it options]: #testname-options-fn

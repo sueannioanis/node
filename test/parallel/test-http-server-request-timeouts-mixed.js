@@ -7,7 +7,7 @@ const { connect } = require('net');
 
 // This test validates that request are correct checked for both requests and headers timeout in various situations.
 
-const requestBodyPart1 = 'POST / HTTP/1.1\r\nContent-Length: 20\r\n';
+const requestBodyPart1 = 'POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 20\r\n';
 const requestBodyPart2 = 'Connection: close\r\n\r\n1234567890';
 const requestBodyPart3 = '1234567890';
 
@@ -15,7 +15,7 @@ const responseOk = 'HTTP/1.1 200 OK\r\n';
 const responseTimeout = 'HTTP/1.1 408 Request Timeout\r\n';
 
 const headersTimeout = common.platformTimeout(2000);
-const connectionsCheckingInterval = headersTimeout / 4;
+const connectionsCheckingInterval = headersTimeout / 8;
 
 const server = createServer({
   headersTimeout,
@@ -76,7 +76,8 @@ server.listen(0, common.mustCall(() => {
 
     // Send the second request, stop in the middle of the headers
     request2.client.write(requestBodyPart1);
-    // Send the second request, stop in the middle of the headers
+
+    // Send the third request and stop in the middle of the headers
     request3.client.write(requestBodyPart1);
   }, headersTimeout * 0.2);
 
@@ -111,7 +112,7 @@ server.listen(0, common.mustCall(() => {
 
     assert(request1.response.startsWith(responseOk));
     assert(request2.response.startsWith(responseTimeout)); // It is expired due to headersTimeout
-  }, headersTimeout * 1.2 + connectionsCheckingInterval);
+  }, headersTimeout * 1.4);
 
   setTimeout(() => {
     // Complete the body for the fourth request

@@ -9,7 +9,7 @@ if (!common.hasCrypto)
 const assert = require('assert');
 const { types: { isCryptoKey } } = require('util');
 const {
-  webcrypto: { subtle, CryptoKey },
+  webcrypto: { subtle },
   createSecretKey,
   KeyObject,
 } = require('crypto');
@@ -452,7 +452,7 @@ const vectors = {
     [1, true, {}, [], undefined, null].forEach(async (namedCurve) => {
       await assert.rejects(
         subtle.generateKey({ name, namedCurve }, true, privateUsages), {
-          code: 'ERR_INVALID_ARG_TYPE'
+          name: 'NotSupportedError'
         });
     });
   }
@@ -512,14 +512,14 @@ const vectors = {
     [1, 100, 257].forEach(async (length) => {
       await assert.rejects(
         subtle.generateKey({ name, length }, true, usages), {
-          code: 'ERR_INVALID_ARG_VALUE'
+          name: 'OperationError'
         });
     });
 
     ['', {}, [], false, null, undefined].forEach(async (length) => {
       await assert.rejects(
         subtle.generateKey({ name, length }, true, usages), {
-          code: 'ERR_INVALID_ARG_TYPE'
+          name: 'OperationError',
         });
     });
   }
@@ -551,10 +551,10 @@ const vectors = {
 
     if (length === undefined) {
       switch (hash) {
-        case 'SHA-1': length = 160; break;
-        case 'SHA-256': length = 256; break;
-        case 'SHA-384': length = 384; break;
-        case 'SHA-512': length = 512; break;
+        case 'SHA-1': length = 512; break;
+        case 'SHA-256': length = 512; break;
+        case 'SHA-384': length = 1024; break;
+        case 'SHA-512': length = 1024; break;
       }
     }
 

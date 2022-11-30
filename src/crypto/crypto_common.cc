@@ -26,8 +26,8 @@ namespace node {
 
 using v8::Array;
 using v8::ArrayBuffer;
-using v8::ArrayBufferView;
 using v8::BackingStore;
+using v8::Boolean;
 using v8::Context;
 using v8::EscapableHandleScope;
 using v8::Integer;
@@ -72,33 +72,22 @@ void LogSecret(
     const unsigned char* secret,
     size_t secretlen) {
   auto keylog_cb = SSL_CTX_get_keylog_callback(SSL_get_SSL_CTX(ssl.get()));
-  unsigned char crandom[32];
+  // All supported versions of TLS/SSL fix the client random to the same size.
+  constexpr size_t kTlsClientRandomSize = SSL3_RANDOM_SIZE;
+  unsigned char crandom[kTlsClientRandomSize];
 
   if (keylog_cb == nullptr ||
-      SSL_get_client_random(ssl.get(), crandom, 32) != 32) {
+      SSL_get_client_random(ssl.get(), crandom, kTlsClientRandomSize) !=
+          kTlsClientRandomSize) {
     return;
   }
 
   std::string line = name;
-  line += " " + StringBytes::hex_encode(
-      reinterpret_cast<const char*>(crandom), 32);
+  line += " " + StringBytes::hex_encode(reinterpret_cast<const char*>(crandom),
+                                        kTlsClientRandomSize);
   line += " " + StringBytes::hex_encode(
       reinterpret_cast<const char*>(secret), secretlen);
   keylog_cb(ssl.get(), line.c_str());
-}
-
-bool SetALPN(const SSLPointer& ssl, const std::string& alpn) {
-  return SSL_set_alpn_protos(
-      ssl.get(),
-      reinterpret_cast<const uint8_t*>(alpn.c_str()),
-      alpn.length()) == 0;
-}
-
-bool SetALPN(const SSLPointer& ssl, Local<Value> alpn) {
-  if (!alpn->IsArrayBufferView())
-    return false;
-  ArrayBufferViewContents<unsigned char> protos(alpn.As<ArrayBufferView>());
-  return SSL_set_alpn_protos(ssl.get(), protos.data(), protos.length()) == 0;
 }
 
 MaybeLocal<Value> GetSSLOCSPResponse(
@@ -329,8 +318,9 @@ constexpr auto GetCipherVersion = GetCipherValue<SSL_CIPHER_get_version>;
 StackOfX509 CloneSSLCerts(X509Pointer&& cert,
                           const STACK_OF(X509)* const ssl_certs) {
   StackOfX509 peer_certs(sk_X509_new(nullptr));
-  if (cert)
-    sk_X509_push(peer_certs.get(), cert.release());
+  if (!peer_certs) return StackOfX509();
+  if (cert && !sk_X509_push(peer_certs.get(), cert.release()))
+    return StackOfX509();
   for (int i = 0; i < sk_X509_num(ssl_certs); i++) {
     X509Pointer cert(X509_dup(sk_X509_value(ssl_certs, i)));
     if (!cert || !sk_X509_push(peer_certs.get(), cert.get()))
@@ -997,17 +987,16 @@ static MaybeLocal<Value> GetX509NameObject(Environment* env, X509* cert) {
     if (value_str_size < 0) {
       return Undefined(env->isolate());
     }
+    auto free_value_str = OnScopeLeave([&]() { OPENSSL_free(value_str); });
 
     Local<String> v8_value;
     if (!String::NewFromUtf8(env->isolate(),
                              reinterpret_cast<const char*>(value_str),
                              NewStringType::kNormal,
-                             value_str_size).ToLocal(&v8_value)) {
-      OPENSSL_free(value_str);
+                             value_str_size)
+             .ToLocal(&v8_value)) {
       return MaybeLocal<Value>();
     }
-
-    OPENSSL_free(value_str);
 
     // For backward compatibility, we only create arrays if multiple values
     // exist for the same key. That is not great but there is not much we can
@@ -1272,6 +1261,8 @@ MaybeLocal<Object> X509ToObject(
   BIOPointer bio(BIO_new(BIO_s_mem()));
   CHECK(bio);
 
+  // X509_check_ca() returns a range of values. Only 1 means "is a CA"
+  auto is_ca = Boolean::New(env->isolate(), 1 == X509_check_ca(cert));
   if (!Set<Value>(context,
                   info,
                   env->subject_string(),
@@ -1287,7 +1278,8 @@ MaybeLocal<Object> X509ToObject(
       !Set<Value>(context,
                   info,
                   env->infoaccess_string(),
-                  GetInfoAccessString(env, bio, cert))) {
+                  GetInfoAccessString(env, bio, cert)) ||
+      !Set<Boolean>(context, info, env->ca_string(), is_ca)) {
     return MaybeLocal<Object>();
   }
 

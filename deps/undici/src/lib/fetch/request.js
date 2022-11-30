@@ -4,11 +4,11 @@
 
 const { extractBody, mixinBody, cloneBody } = require('./body')
 const { Headers, fill: fillHeaders, HeadersList } = require('./headers')
+const { FinalizationRegistry } = require('../compat/dispatcher-weakref')()
 const util = require('../core/util')
 const {
   isValidHTTPToken,
   sameOrigin,
-  toUSVString,
   normalizeMethod
 } = require('./util')
 const {
@@ -18,10 +18,14 @@ const {
   requestRedirect,
   requestMode,
   requestCredentials,
-  requestCache
+  requestCache,
+  requestDuplex
 } = require('./constants')
 const { kEnumerableProperty } = util
 const { kHeaders, kSignal, kState, kGuard, kRealm } = require('./symbols')
+const { webidl } = require('./webidl')
+const { getGlobalOrigin } = require('./global')
+const { URLSerializer } = require('./dataURL')
 const { kHeadersList } = require('../core/symbols')
 const assert = require('assert')
 
@@ -36,30 +40,22 @@ const requestFinalizer = new FinalizationRegistry(({ signal, abort }) => {
 // https://fetch.spec.whatwg.org/#request-class
 class Request {
   // https://fetch.spec.whatwg.org/#dom-request
-  constructor (...args) {
-    if (args[0] === kInit) {
+  constructor (input, init = {}) {
+    if (input === kInit) {
       return
     }
 
-    if (args.length < 1) {
-      throw new TypeError(
-        `Failed to construct 'Request': 1 argument required, but only ${args.length} present.`
-      )
-    }
-    if (
-      args.length >= 1 &&
-      typeof args[1] !== 'object' &&
-      args[1] !== undefined
-    ) {
-      throw new TypeError(
-        "Failed to construct 'Request': cannot convert to dictionary."
-      )
-    }
-    const input = args[0] instanceof Request ? args[0] : toUSVString(args[0])
-    const init = args.length >= 1 ? args[1] ?? {} : {}
+    webidl.argumentLengthCheck(arguments, 1, { header: 'Request constructor' })
+
+    input = webidl.converters.RequestInfo(input)
+    init = webidl.converters.RequestInit(init)
 
     // TODO
-    this[kRealm] = { settingsObject: {} }
+    this[kRealm] = {
+      settingsObject: {
+        baseUrl: getGlobalOrigin()
+      }
+    }
 
     // 1. Let request be null.
     let request = null
@@ -244,29 +240,22 @@ class Request {
     // to it.
     if (init.referrerPolicy !== undefined) {
       request.referrerPolicy = init.referrerPolicy
-      if (!referrerPolicy.includes(request.referrerPolicy)) {
-        throw new TypeError(
-          `Failed to construct 'Request': The provided value '${request.referrerPolicy}' is not a valid enum value of type ReferrerPolicy.`
-        )
-      }
     }
 
     // 16. Let mode be init["mode"] if it exists, and fallbackMode otherwise.
     let mode
     if (init.mode !== undefined) {
       mode = init.mode
-      if (!requestMode.includes(mode)) {
-        throw new TypeError(
-          `Failed to construct 'Request': The provided value '${request.mode}' is not a valid enum value of type RequestMode.`
-        )
-      }
     } else {
       mode = fallbackMode
     }
 
     // 17. If mode is "navigate", then throw a TypeError.
     if (mode === 'navigate') {
-      throw new TypeError()
+      throw webidl.errors.exception({
+        header: 'Request constructor',
+        message: 'invalid request mode navigate.'
+      })
     }
 
     // 18. If mode is non-null, set request’s mode to mode.
@@ -278,21 +267,11 @@ class Request {
     // to it.
     if (init.credentials !== undefined) {
       request.credentials = init.credentials
-      if (!requestCredentials.includes(request.credentials)) {
-        throw new TypeError(
-          `Failed to construct 'Request': The provided value '${request.credentials}' is not a valid enum value of type RequestCredentials.`
-        )
-      }
     }
 
     // 18. If init["cache"] exists, then set request’s cache mode to it.
     if (init.cache !== undefined) {
       request.cache = init.cache
-      if (!requestCache.includes(request.cache)) {
-        throw new TypeError(
-          `Failed to construct 'Request': The provided value '${request.cache}' is not a valid enum value of type RequestCache.`
-        )
-      }
     }
 
     // 21. If request’s cache mode is "only-if-cached" and request’s mode is
@@ -306,11 +285,6 @@ class Request {
     // 22. If init["redirect"] exists, then set request’s redirect mode to it.
     if (init.redirect !== undefined) {
       request.redirect = init.redirect
-      if (!requestRedirect.includes(request.redirect)) {
-        throw new TypeError(
-          `Failed to construct 'Request': The provided value '${request.redirect}' is not a valid enum value of type RequestRedirect.`
-        )
-      }
     }
 
     // 23. If init["integrity"] exists, then set request’s integrity metadata to it.
@@ -372,9 +346,9 @@ class Request {
       }
 
       if (signal.aborted) {
-        ac.abort()
+        ac.abort(signal.reason)
       } else {
-        const abort = () => ac.abort()
+        const abort = () => ac.abort(signal.reason)
         signal.addEventListener('abort', abort, { once: true })
         requestFinalizer.register(this, { signal, abort })
       }
@@ -459,7 +433,7 @@ class Request {
       // 3, If Content-Type is non-null and this’s headers’s header list does
       // not contain `Content-Type`, then append `Content-Type`/Content-Type to
       // this’s headers.
-      if (contentType && !this[kHeaders].has('content-type')) {
+      if (contentType && !this[kHeaders][kHeadersList].contains('content-type')) {
         this[kHeaders].append('content-type', contentType)
       }
     }
@@ -471,7 +445,13 @@ class Request {
     // 38. If inputOrInitBody is non-null and inputOrInitBody’s source is
     // null, then:
     if (inputOrInitBody != null && inputOrInitBody.source == null) {
-      // 1. If this’s request’s mode is neither "same-origin" nor "cors",
+      // 1. If initBody is non-null and init["duplex"] does not exist,
+      //    then throw a TypeError.
+      if (initBody != null && init.duplex == null) {
+        throw new TypeError('RequestInit: duplex option is required when sending a body.')
+      }
+
+      // 2. If this’s request’s mode is neither "same-origin" nor "cors",
       // then throw a TypeError.
       if (request.mode !== 'same-origin' && request.mode !== 'cors') {
         throw new TypeError(
@@ -479,7 +459,7 @@ class Request {
         )
       }
 
-      // 2. Set this’s request’s use-CORS-preflight flag.
+      // 3. Set this’s request’s use-CORS-preflight flag.
       request.useCORSPreflightFlag = true
     }
 
@@ -514,15 +494,9 @@ class Request {
     this[kState].body = finalBody
   }
 
-  get [Symbol.toStringTag] () {
-    return this.constructor.name
-  }
-
   // Returns request’s HTTP method, which is "GET" by default.
   get method () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The method getter steps are to return this’s request’s method.
     return this[kState].method
@@ -530,21 +504,17 @@ class Request {
 
   // Returns the URL of request as a string.
   get url () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The url getter steps are to return this’s request’s URL, serialized.
-    return this[kState].url.toString()
+    return URLSerializer(this[kState].url)
   }
 
   // Returns a Headers object consisting of the headers associated with request.
   // Note that headers added in the network layer by the user agent will not
   // be accounted for in this object, e.g., the "Host" header.
   get headers () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The headers getter steps are to return this’s headers.
     return this[kHeaders]
@@ -553,9 +523,7 @@ class Request {
   // Returns the kind of resource requested by request, e.g., "document"
   // or "script".
   get destination () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The destination getter are to return this’s request’s destination.
     return this[kState].destination
@@ -567,9 +535,7 @@ class Request {
   // during fetching to determine the value of the `Referer` header of the
   // request being made.
   get referrer () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // 1. If this’s request’s referrer is "no-referrer", then return the
     // empty string.
@@ -591,9 +557,7 @@ class Request {
   // This is used during fetching to compute the value of the request’s
   // referrer.
   get referrerPolicy () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The referrerPolicy getter steps are to return this’s request’s referrer policy.
     return this[kState].referrerPolicy
@@ -603,9 +567,7 @@ class Request {
   // whether the request will use CORS, or will be restricted to same-origin
   // URLs.
   get mode () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The mode getter steps are to return this’s request’s mode.
     return this[kState].mode
@@ -623,9 +585,7 @@ class Request {
   // which is a string indicating how the request will
   // interact with the browser’s cache when fetching.
   get cache () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The cache getter steps are to return this’s request’s cache mode.
     return this[kState].cache
@@ -636,9 +596,7 @@ class Request {
   // request will be handled during fetching. A request
   // will follow redirects by default.
   get redirect () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The redirect getter steps are to return this’s request’s redirect mode.
     return this[kState].redirect
@@ -648,9 +606,7 @@ class Request {
   // cryptographic hash of the resource being fetched. Its value
   // consists of multiple hashes separated by whitespace. [SRI]
   get integrity () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The integrity getter steps are to return this’s request’s integrity
     // metadata.
@@ -660,9 +616,7 @@ class Request {
   // Returns a boolean indicating whether or not request can outlive the
   // global in which it was created.
   get keepalive () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The keepalive getter steps are to return this’s request’s keepalive.
     return this[kState].keepalive
@@ -671,9 +625,7 @@ class Request {
   // Returns a boolean indicating whether or not request is for a reload
   // navigation.
   get isReloadNavigation () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The isReloadNavigation getter steps are to return true if this’s
     // request’s reload-navigation flag is set; otherwise false.
@@ -683,9 +635,7 @@ class Request {
   // Returns a boolean indicating whether or not request is for a history
   // navigation (a.k.a. back-foward navigation).
   get isHistoryNavigation () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The isHistoryNavigation getter steps are to return true if this’s request’s
     // history-navigation flag is set; otherwise false.
@@ -696,19 +646,33 @@ class Request {
   // object indicating whether or not request has been aborted, and its
   // abort event handler.
   get signal () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // The signal getter steps are to return this’s signal.
     return this[kSignal]
   }
 
+  get body () {
+    webidl.brandCheck(this, Request)
+
+    return this[kState].body ? this[kState].body.stream : null
+  }
+
+  get bodyUsed () {
+    webidl.brandCheck(this, Request)
+
+    return !!this[kState].body && util.isDisturbed(this[kState].body.stream)
+  }
+
+  get duplex () {
+    webidl.brandCheck(this, Request)
+
+    return 'half'
+  }
+
   // Returns a clone of request.
   clone () {
-    if (!(this instanceof Request)) {
-      throw new TypeError('Illegal invocation')
-    }
+    webidl.brandCheck(this, Request)
 
     // 1. If this is unusable, then throw a TypeError.
     if (this.bodyUsed || this.body?.locked) {
@@ -731,12 +695,12 @@ class Request {
     // 4. Make clonedRequestObject’s signal follow this’s signal.
     const ac = new AbortController()
     if (this.signal.aborted) {
-      ac.abort()
+      ac.abort(this.signal.reason)
     } else {
       this.signal.addEventListener(
         'abort',
-        function () {
-          ac.abort()
+        () => {
+          ac.abort(this.signal.reason)
         },
         { once: true }
       )
@@ -748,7 +712,7 @@ class Request {
   }
 }
 
-mixinBody(Request.prototype)
+mixinBody(Request)
 
 function makeRequest (init) {
   // https://fetch.spec.whatwg.org/#requests
@@ -820,7 +784,124 @@ Object.defineProperties(Request.prototype, {
   headers: kEnumerableProperty,
   redirect: kEnumerableProperty,
   clone: kEnumerableProperty,
-  signal: kEnumerableProperty
+  signal: kEnumerableProperty,
+  duplex: kEnumerableProperty,
+  destination: kEnumerableProperty,
+  body: kEnumerableProperty,
+  bodyUsed: kEnumerableProperty,
+  isHistoryNavigation: kEnumerableProperty,
+  isReloadNavigation: kEnumerableProperty,
+  keepalive: kEnumerableProperty,
+  integrity: kEnumerableProperty,
+  cache: kEnumerableProperty,
+  credentials: kEnumerableProperty,
+  attribute: kEnumerableProperty,
+  referrerPolicy: kEnumerableProperty,
+  referrer: kEnumerableProperty,
+  mode: kEnumerableProperty,
+  [Symbol.toStringTag]: {
+    value: 'Request',
+    configurable: true
+  }
 })
+
+webidl.converters.Request = webidl.interfaceConverter(
+  Request
+)
+
+// https://fetch.spec.whatwg.org/#requestinfo
+webidl.converters.RequestInfo = function (V) {
+  if (typeof V === 'string') {
+    return webidl.converters.USVString(V)
+  }
+
+  if (V instanceof Request) {
+    return webidl.converters.Request(V)
+  }
+
+  return webidl.converters.USVString(V)
+}
+
+webidl.converters.AbortSignal = webidl.interfaceConverter(
+  AbortSignal
+)
+
+// https://fetch.spec.whatwg.org/#requestinit
+webidl.converters.RequestInit = webidl.dictionaryConverter([
+  {
+    key: 'method',
+    converter: webidl.converters.ByteString
+  },
+  {
+    key: 'headers',
+    converter: webidl.converters.HeadersInit
+  },
+  {
+    key: 'body',
+    converter: webidl.nullableConverter(
+      webidl.converters.BodyInit
+    )
+  },
+  {
+    key: 'referrer',
+    converter: webidl.converters.USVString
+  },
+  {
+    key: 'referrerPolicy',
+    converter: webidl.converters.DOMString,
+    // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy
+    allowedValues: referrerPolicy
+  },
+  {
+    key: 'mode',
+    converter: webidl.converters.DOMString,
+    // https://fetch.spec.whatwg.org/#concept-request-mode
+    allowedValues: requestMode
+  },
+  {
+    key: 'credentials',
+    converter: webidl.converters.DOMString,
+    // https://fetch.spec.whatwg.org/#requestcredentials
+    allowedValues: requestCredentials
+  },
+  {
+    key: 'cache',
+    converter: webidl.converters.DOMString,
+    // https://fetch.spec.whatwg.org/#requestcache
+    allowedValues: requestCache
+  },
+  {
+    key: 'redirect',
+    converter: webidl.converters.DOMString,
+    // https://fetch.spec.whatwg.org/#requestredirect
+    allowedValues: requestRedirect
+  },
+  {
+    key: 'integrity',
+    converter: webidl.converters.DOMString
+  },
+  {
+    key: 'keepalive',
+    converter: webidl.converters.boolean
+  },
+  {
+    key: 'signal',
+    converter: webidl.nullableConverter(
+      (signal) => webidl.converters.AbortSignal(
+        signal,
+        { strict: false }
+      )
+    )
+  },
+  {
+    key: 'window',
+    converter: webidl.converters.any
+  },
+  {
+    key: 'duplex',
+    converter: webidl.converters.DOMString,
+    allowedValues: requestDuplex
+  }
+])
 
 module.exports = { Request, makeRequest }

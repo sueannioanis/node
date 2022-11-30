@@ -23,14 +23,14 @@ instances.
 
 ```js
 const {
-  Worker, isMainThread, parentPort, workerData
+  Worker, isMainThread, parentPort, workerData,
 } = require('node:worker_threads');
 
 if (isMainThread) {
   module.exports = function parseJSAsync(script) {
     return new Promise((resolve, reject) => {
       const worker = new Worker(__filename, {
-        workerData: script
+        workerData: script,
       });
       worker.on('message', resolve);
       worker.on('error', reject);
@@ -370,7 +370,7 @@ with all other `BroadcastChannel` instances bound to the same channel name.
 const {
   isMainThread,
   BroadcastChannel,
-  Worker
+  Worker,
 } = require('node:worker_threads');
 
 const bc = new BroadcastChannel('hello');
@@ -770,7 +770,9 @@ port2.postMessage(new URL('https://example.org'));
 ### `port.hasRef()`
 
 <!-- YAML
-added: v18.1.0
+added:
+  - v18.1.0
+  - v16.17.0
 -->
 
 > Stability: 1 - Experimental
@@ -881,7 +883,7 @@ the thread barrier.
 ```js
 const assert = require('node:assert');
 const {
-  Worker, MessageChannel, MessagePort, isMainThread, parentPort
+  Worker, MessageChannel, MessagePort, isMainThread, parentPort,
 } = require('node:worker_threads');
 if (isMainThread) {
   const worker = new Worker(__filename);
@@ -987,14 +989,17 @@ changes:
     are passed in `workerData`, a `transferList` is required for those
     items or [`ERR_MISSING_MESSAGE_PORT_IN_TRANSFER_LIST`][] is thrown.
     See [`port.postMessage()`][] for more information.
-  * `resourceLimits` {Object} An optional set of resource limits for the new
-    JS engine instance. Reaching these limits leads to termination of the
-    `Worker` instance. These limits only affect the JS engine, and no external
-    data, including no `ArrayBuffer`s. Even if these limits are set, the process
-    may still abort if it encounters a global out-of-memory situation.
-    * `maxOldGenerationSizeMb` {number} The maximum size of the main heap in MB.
+  * `resourceLimits` {Object} An optional set of resource limits for the new JS
+    engine instance. Reaching these limits leads to termination of the `Worker`
+    instance. These limits only affect the JS engine, and no external data,
+    including no `ArrayBuffer`s. Even if these limits are set, the process may
+    still abort if it encounters a global out-of-memory situation.
+    * `maxOldGenerationSizeMb` {number} The maximum size of the main heap in
+      MB. If the command-line argument [`--max-old-space-size`][] is set, it
+      overrides this setting.
     * `maxYoungGenerationSizeMb` {number} The maximum size of a heap space for
-      recently created objects.
+      recently created objects. If the command-line argument
+      [`--max-semi-space-size`][] is set, it overrides this setting.
     * `codeRangeSizeMb` {number} The size of a pre-allocated memory range
       used for generated code.
     * `stackSizeMb` {number} The default maximum stack size for the thread.
@@ -1062,14 +1067,23 @@ added: v10.5.0
 The `'online'` event is emitted when the worker thread has started executing
 JavaScript code.
 
-### `worker.getHeapSnapshot()`
+### `worker.getHeapSnapshot([options])`
 
 <!-- YAML
 added:
  - v13.9.0
  - v12.17.0
+changes:
+  - version: v19.1.0
+    pr-url: https://github.com/nodejs/node/pull/44989
+    description: Support options to configure the heap snapshot.
 -->
 
+* `options` {Object}
+  * `exposeInternals` {boolean} If true, expose internals in the heap snapshot.
+    **Default:** `false`.
+  * `exposeNumericValues` {boolean} If true, expose numeric values in
+    artificial fields. **Default:** `false`.
 * Returns: {Promise} A promise for a Readable Stream containing
   a V8 heap snapshot
 
@@ -1332,6 +1346,8 @@ thread spawned will spawn another until the application crashes.
 [`'close'` event]: #event-close
 [`'exit'` event]: #event-exit
 [`'online'` event]: #event-online
+[`--max-old-space-size`]: cli.md#--max-old-space-sizesize-in-megabytes
+[`--max-semi-space-size`]: cli.md#--max-semi-space-sizesize-in-megabytes
 [`ArrayBuffer`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer
 [`AsyncResource`]: async_hooks.md#class-asyncresource
 [`Buffer.allocUnsafe()`]: buffer.md#static-method-bufferallocunsafesize
@@ -1372,7 +1388,7 @@ thread spawned will spawn another until the application crashes.
 [`require('node:worker_threads').threadId`]: #workerthreadid
 [`require('node:worker_threads').workerData`]: #workerworkerdata
 [`trace_events`]: tracing.md
-[`v8.getHeapSnapshot()`]: v8.md#v8getheapsnapshot
+[`v8.getHeapSnapshot()`]: v8.md#v8getheapsnapshotoptions
 [`vm`]: vm.md
 [`worker.SHARE_ENV`]: #workershare_env
 [`worker.on('message')`]: #event-message_1

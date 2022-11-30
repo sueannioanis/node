@@ -1465,7 +1465,7 @@ setMaxListeners(5, target, emitter);
 ```cjs
 const {
   setMaxListeners,
-  EventEmitter
+  EventEmitter,
 } = require('node:events');
 
 const target = new EventTarget();
@@ -1487,9 +1487,9 @@ require manual async tracking. Specifically, all events emitted by instances
 of `events.EventEmitterAsyncResource` will run within its [async context][].
 
 ```mjs
-import { EventEmitterAsyncResource } from 'node:events';
+import { EventEmitterAsyncResource, EventEmitter } from 'node:events';
 import { notStrictEqual, strictEqual } from 'node:assert';
-import { executionAsyncId } from 'node:async_hooks';
+import { executionAsyncId, triggerAsyncId } from 'node:async_hooks';
 
 // Async tracking tooling will identify this as 'Q'.
 const ee1 = new EventEmitterAsyncResource({ name: 'Q' });
@@ -1516,9 +1516,9 @@ Promise.resolve().then(() => {
 ```
 
 ```cjs
-const { EventEmitterAsyncResource } = require('node:events');
+const { EventEmitterAsyncResource, EventEmitter } = require('node:events');
 const { notStrictEqual, strictEqual } = require('node:assert');
-const { executionAsyncId } = require('node:async_hooks');
+const { executionAsyncId, triggerAsyncId } = require('node:async_hooks');
 
 // Async tracking tooling will identify this as 'Q'.
 const ee1 = new EventEmitterAsyncResource({ name: 'Q' });
@@ -1688,13 +1688,13 @@ async function handler2(event) {
 const handler3 = {
   handleEvent(event) {
     console.log(event.type);  // Prints 'foo'
-  }
+  },
 };
 
 const handler4 = {
   async handleEvent(event) {
     console.log(event.type);  // Prints 'foo'
-  }
+  },
 };
 
 const target = new EventTarget();
@@ -1974,7 +1974,7 @@ Dispatches the `event` to the list of handlers for `event.type`.
 The registered event listeners is synchronously invoked in the order they
 were registered.
 
-#### `eventTarget.removeEventListener(type, listener)`
+#### `eventTarget.removeEventListener(type, listener[, options])`
 
 <!-- YAML
 added: v14.5.0
@@ -1986,6 +1986,35 @@ added: v14.5.0
   * `capture` {boolean}
 
 Removes the `listener` from the list of handlers for event `type`.
+
+### Class: `CustomEvent`
+
+<!-- YAML
+added:
+  - v18.7.0
+  - v16.17.0
+-->
+
+> Stability: 1 - Experimental.
+
+* Extends: {Event}
+
+The `CustomEvent` object is an adaptation of the [`CustomEvent` Web API][].
+Instances are created internally by Node.js.
+
+#### `event.detail`
+
+<!-- YAML
+added:
+  - v18.7.0
+  - v16.17.0
+-->
+
+> Stability: 1 - Experimental.
+
+* Type: {any} Returns custom data passed when initializing.
+
+Read-only.
 
 ### Class: `NodeEventTarget`
 
@@ -2124,6 +2153,7 @@ to the `EventTarget`.
 
 [WHATWG-EventTarget]: https://dom.spec.whatwg.org/#interface-eventtarget
 [`--trace-warnings`]: cli.md#--trace-warnings
+[`CustomEvent` Web API]: https://dom.spec.whatwg.org/#customevent
 [`EventTarget` Web API]: https://dom.spec.whatwg.org/#eventtarget
 [`EventTarget` error handling]: #eventtarget-error-handling
 [`Event` Web API]: https://dom.spec.whatwg.org/#event

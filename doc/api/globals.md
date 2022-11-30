@@ -202,7 +202,9 @@ console.log(ac.signal.reason);  // Error('boom!');
 #### `abortSignal.throwIfAborted()`
 
 <!-- YAML
-added: v17.3.0
+added:
+  - v17.3.0
+  - v16.17.0
 -->
 
 If `abortSignal.aborted` is `true`, throws `abortSignal.reason`.
@@ -343,10 +345,14 @@ A browser-compatible implementation of [`CountQueuingStrategy`][].
 added:
   - v17.6.0
   - v16.15.0
+changes:
+  - version: v19.0.0
+    pr-url: https://github.com/nodejs/node/pull/42083
+    description: No longer behind `--experimental-global-webcrypto` CLI flag.
 -->
 
-> Stability: 1 - Experimental. Enable this API with the
-> [`--experimental-global-webcrypto`][] CLI flag.
+> Stability: 1 - Experimental. Disable this API with the
+> [`--no-experimental-global-webcrypto`][] CLI flag.
 
 A browser-compatible implementation of {Crypto}. This global is available
 only if the Node.js binary was compiled with including support for the
@@ -358,10 +364,14 @@ only if the Node.js binary was compiled with including support for the
 added:
   - v17.6.0
   - v16.15.0
+changes:
+  - version: v19.0.0
+    pr-url: https://github.com/nodejs/node/pull/42083
+    description: No longer behind `--experimental-global-webcrypto` CLI flag.
 -->
 
-> Stability: 1 - Experimental. Enable this API with the
-> [`--experimental-global-webcrypto`][] CLI flag.
+> Stability: 1 - Experimental. Disable this API with the
+> [`--no-experimental-global-webcrypto`][] CLI flag.
 
 A browser-compatible implementation of the [Web Crypto API][].
 
@@ -371,14 +381,37 @@ A browser-compatible implementation of the [Web Crypto API][].
 added:
   - v17.6.0
   - v16.15.0
+changes:
+  - version: v19.0.0
+    pr-url: https://github.com/nodejs/node/pull/42083
+    description: No longer behind `--experimental-global-webcrypto` CLI flag.
 -->
 
-> Stability: 1 - Experimental. Enable this API with the
-> [`--experimental-global-webcrypto`][] CLI flag.
+> Stability: 1 - Experimental. Disable this API with the
+> [`--no-experimental-global-webcrypto`][] CLI flag.
 
 A browser-compatible implementation of {CryptoKey}. This global is available
 only if the Node.js binary was compiled with including support for the
 `node:crypto` module.
+
+## `CustomEvent`
+
+<!-- YAML
+added:
+  - v18.7.0
+  - v16.17.0
+changes:
+  - version: v19.0.0
+    pr-url: https://github.com/nodejs/node/pull/44860
+    description: No longer behind `--experimental-global-customevent` CLI flag.
+-->
+
+> Stability: 1 - Experimental. Disable this API with the
+> [`--no-experimental-global-customevent`][] CLI flag.
+
+<!-- type=global -->
+
+A browser-compatible implementation of the [`CustomEvent` Web API][].
 
 ## Class: `DecompressionStream`
 
@@ -430,6 +463,10 @@ This variable may appear to be global but is not. See [`exports`][].
 added:
   - v17.5.0
   - v16.15.0
+changes:
+  - version: v18.0.0
+    pr-url: https://github.com/nodejs/node/pull/41811
+    description: No longer behind `--experimental-global-fetch` CLI flag.
 -->
 
 > Stability: 1 - Experimental. Disable this API with the [`--no-experimental-fetch`][]
@@ -443,6 +480,10 @@ A browser-compatible implementation of the [`fetch()`][] function.
 added:
   - v17.6.0
   - v16.15.0
+changes:
+  - version: v18.0.0
+    pr-url: https://github.com/nodejs/node/pull/41811
+    description: No longer behind `--experimental-global-fetch` CLI flag.
 -->
 
 > Stability: 1 - Experimental. Disable this API with the [`--no-experimental-fetch`][]
@@ -471,6 +512,10 @@ Node.js this is different. The top-level scope is not the global scope;
 added:
   - v17.5.0
   - v16.15.0
+changes:
+  - version: v18.0.0
+    pr-url: https://github.com/nodejs/node/pull/41811
+    description: No longer behind `--experimental-global-fetch` CLI flag.
 -->
 
 > Stability: 1 - Experimental. Disable this API with the [`--no-experimental-fetch`][]
@@ -512,7 +557,73 @@ The `MessagePort` class. See [`MessagePort`][] for more details.
 
 This variable may appear to be global but is not. See [`module`][].
 
+## `PerformanceEntry`
+
+<!-- YAML
+added: v19.0.0
+-->
+
+<!-- type=global -->
+
+The `PerformanceEntry` class. See [`PerformanceEntry`][] for more details.
+
+## `PerformanceMark`
+
+<!-- YAML
+added: v19.0.0
+-->
+
+<!-- type=global -->
+
+The `PerformanceMark` class. See [`PerformanceMark`][] for more details.
+
+## `PerformanceMeasure`
+
+<!-- YAML
+added: v19.0.0
+-->
+
+<!-- type=global -->
+
+The `PerformanceMeasure` class. See [`PerformanceMeasure`][] for more details.
+
+## `PerformanceObserver`
+
+<!-- YAML
+added: v19.0.0
+-->
+
+<!-- type=global -->
+
+The `PerformanceObserver` class. See [`PerformanceObserver`][] for more details.
+
+## `PerformanceObserverEntryList`
+
+<!-- YAML
+added: v19.0.0
+-->
+
+<!-- type=global -->
+
+The `PerformanceObserverEntryList` class. See
+[`PerformanceObserverEntryList`][] for more details.
+
+## `PerformanceResourceTiming`
+
+<!-- YAML
+added: v19.0.0
+-->
+
+<!-- type=global -->
+
+The `PerformanceResourceTiming` class. See [`PerformanceResourceTiming`][] for
+more details.
+
 ## `performance`
+
+<!-- YAML
+added: v16.0.0
+-->
 
 The [`perf_hooks.performance`][] object.
 
@@ -638,6 +749,10 @@ This variable may appear to be global but is not. See [`require()`][].
 added:
   - v17.5.0
   - v16.15.0
+changes:
+  - version: v18.0.0
+    pr-url: https://github.com/nodejs/node/pull/41811
+    description: No longer behind `--experimental-global-fetch` CLI flag.
 -->
 
 > Stability: 1 - Experimental. Disable this API with the [`--no-experimental-fetch`][]
@@ -651,6 +766,10 @@ A browser-compatible implementation of {Response}.
 added:
   - v17.5.0
   - v16.15.0
+changes:
+  - version: v18.0.0
+    pr-url: https://github.com/nodejs/node/pull/41811
+    description: No longer behind `--experimental-global-fetch` CLI flag.
 -->
 
 > Stability: 1 - Experimental. Disable this API with the [`--no-experimental-fetch`][]
@@ -704,10 +823,14 @@ The WHATWG [`structuredClone`][] method.
 added:
   - v17.6.0
   - v16.15.0
+changes:
+  - version: v19.0.0
+    pr-url: https://github.com/nodejs/node/pull/42083
+    description: No longer behind `--experimental-global-webcrypto` CLI flag.
 -->
 
-> Stability: 1 - Experimental. Enable this API with the
-> [`--experimental-global-webcrypto`][] CLI flag.
+> Stability: 1 - Experimental. Disable this API with the
+> [`--no-experimental-global-webcrypto`][] CLI flag.
 
 A browser-compatible implementation of {SubtleCrypto}. This global is available
 only if the Node.js binary was compiled with including support for the
@@ -848,18 +971,26 @@ added: v18.0.0
 A browser-compatible implementation of [`WritableStreamDefaultWriter`][].
 
 [Web Crypto API]: webcrypto.md
-[`--experimental-global-webcrypto`]: cli.md#--experimental-global-webcrypto
 [`--no-experimental-fetch`]: cli.md#--no-experimental-fetch
+[`--no-experimental-global-customevent`]: cli.md#--no-experimental-global-customevent
+[`--no-experimental-global-webcrypto`]: cli.md#--no-experimental-global-webcrypto
 [`AbortController`]: https://developer.mozilla.org/en-US/docs/Web/API/AbortController
 [`ByteLengthQueuingStrategy`]: webstreams.md#class-bytelengthqueuingstrategy
 [`CompressionStream`]: webstreams.md#class-compressionstream
 [`CountQueuingStrategy`]: webstreams.md#class-countqueuingstrategy
+[`CustomEvent` Web API]: https://dom.spec.whatwg.org/#customevent
 [`DOMException`]: https://developer.mozilla.org/en-US/docs/Web/API/DOMException
 [`DecompressionStream`]: webstreams.md#class-decompressionstream
 [`EventTarget` and `Event` API]: events.md#eventtarget-and-event-api
 [`MessageChannel`]: worker_threads.md#class-messagechannel
 [`MessageEvent`]: https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent/MessageEvent
 [`MessagePort`]: worker_threads.md#class-messageport
+[`PerformanceEntry`]: perf_hooks.md#class-performanceentry
+[`PerformanceMark`]: perf_hooks.md#class-performancemark
+[`PerformanceMeasure`]: perf_hooks.md#class-performancemeasure
+[`PerformanceObserverEntryList`]: perf_hooks.md#class-performanceobserverentrylist
+[`PerformanceObserver`]: perf_hooks.md#class-performanceobserver
+[`PerformanceResourceTiming`]: perf_hooks.md#class-performanceresourcetiming
 [`ReadableByteStreamController`]: webstreams.md#class-readablebytestreamcontroller
 [`ReadableStreamBYOBReader`]: webstreams.md#class-readablestreambyobreader
 [`ReadableStreamBYOBRequest`]: webstreams.md#class-readablestreambyobrequest
